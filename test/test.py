@@ -1,12 +1,10 @@
 #!/usr/bin/env python
-#encoding=utf-8
+# encoding=utf-8
 
 from __future__ import print_function
 
 import asdox
 import asdox.asBuilder
-
-import utils
 
 builder = asdox.asBuilder.Builder()
 
@@ -96,26 +94,26 @@ builder = asdox.asBuilder.Builder()
 # mxml 文件解析
 # builder.addMXMLSource('samples/tofix/Main.mxml', '')
 
-# from ASObfuscator import ASObfuscator
-# obfuscator = ASObfuscator(
-#     '../../as_test/src',
-#     './samples/as_test',
-#     ignore_paths=['asds', 'res', 'Teach/UI/ToolBar/Menu/icon'],
-#     ignore_classes=['Teach.mxml', 'TeachConfig.as']
-# )
-# obfuscator.run('Main.decompressed.swf')
-
-
-from ASObfuscator import ASObfuscator
-obfuscator = ASObfuscator(
-    './samples/Bio_src',
-    './samples/Bio_src_d',
-    ignore_paths=['asds', 'res', 'Teach/UI/ToolBar/Menu/icon'],
-    ignore_classes=[],
-    keep_classname_classes=['TeachConfig.as', ]
+from AS3Obfuscator import AS3Obfuscator
+obfuscator = AS3Obfuscator(
+    './samples/as_test/src',
+    './samples/as_test/obfuscated',
+    ignore_paths=[],
+    ignore_classes=[]
 )
-obfuscator.run('Teach.decompressed.swf')
-# obfuscator.debug('Teach.decompressed.swf')
+obfuscator.run('./samples/as_test/out/production/as_test/Main.decompressed.swf')
+
+
+# from AS3Obfuscator import AS3Obfuscator
+# obfuscator = AS3Obfuscator(
+#     './samples/Bio_src',
+#     './samples/Bio_src_d',
+#     ignore_paths=['asds', 'res', 'Teach/UI/ToolBar/Menu/icon'],
+#     ignore_classes=[],
+#     keep_classname_classes=['TeachConfig.as', ]
+# )
+# obfuscator.run('Teach.decompressed.swf')
+# # obfuscator.debug('Teach.decompressed.swf')
 
 
 # from IPython import embed;embed();

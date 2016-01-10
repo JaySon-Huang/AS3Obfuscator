@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#encoding=utf-8
+# encoding=utf-8
 
 from __future__ import print_function
 
@@ -23,7 +23,7 @@ from replacer import SWFFileReplacer, SourceCodeReplacer
 from generator import FuzzyClassGenerator
 
 
-class ASObfuscator(object):
+class AS3Obfuscator(object):
 
     NAMESET = {
         'module': string.ascii_uppercase,

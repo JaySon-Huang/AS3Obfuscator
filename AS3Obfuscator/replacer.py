@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#encoding=utf-8
+# encoding=utf-8
 
 from __future__ import print_function
 
@@ -26,10 +26,6 @@ from swf.abcfile.trait import (
 from utils import (
     filepath2module, module2filepath,
     splitABCName, joinPackageClassName,
-)
-import pyparsing
-from pyparsing import (
-    Optional,
 )
 from asdox.asGrammar import (
     METHOD_SIGNATURE, METHOD_MODIFIER,

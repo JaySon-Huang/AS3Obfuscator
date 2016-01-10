@@ -1,6 +1,6 @@
 [submodule "asdox"]
-	path = asdox
+	path = AS3Obfuscator/asdox
 	url = git@github.com:JaySon-Huang/asdox.git
 [submodule "pyswf"]
-	path = pyswf
+	path = AS3Obfuscator/pyswf
 	url = git@github.com:JaySon-Huang/pyswf.git
