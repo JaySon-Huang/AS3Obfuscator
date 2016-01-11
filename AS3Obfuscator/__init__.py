@@ -304,11 +304,12 @@ class AS3Obfuscator(object):
         replacer = SWFFileReplacer(self._packages, self._names_map)
         name, ext = os.path.splitext(swf_filename)
         out_filename = name + '.obfused' + ext
-        print('Replacing SWF file {0} -> {1}'.format(swf_filename, out_filename))
         replacer.replace(swf_filename,  out_filename)
+        print('Replacing SWF file {0} -> {1}'.format(swf_filename, out_filename))
         return None
 
     def debug(self, swf_filename):
+        print('>>debug<< restore self from {0}'.format('self.pydata'))
         import pickle
         with open('self.pydata', 'r') as infile:
             self = pickle.load(infile)
@@ -319,6 +320,6 @@ class AS3Obfuscator(object):
         replacer = SWFFileReplacer(self._packages, self._names_map)
         name, ext = os.path.splitext(swf_filename)
         out_filename = name + '.obfused' + ext
-        print('Replacing SWF file {0} -> {1}'.format(swf_filename, out_filename))
         replacer.replace(swf_filename,  out_filename)
+        print('Replacing SWF file {0} -> {1}'.format(swf_filename, out_filename))
         return None

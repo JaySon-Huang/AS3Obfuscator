@@ -151,6 +151,7 @@ class SourceCodeReplacer(object):
         return source
 
 
+# noinspection PyPep8Naming
 class OutputStream(BytesIO):
 
     def writeU30(self, num):
@@ -190,7 +191,7 @@ class SWFFileReplacer(object):
 
     def replace(self, swf_filename, out_filename):
         with open(swf_filename, 'rb') as infile:
-            s = SWF(infile)
+            s = SWF(infile, is_quick_mode=True)
             infile.seek(0)
             original_bytes = infile.read()
         with open(out_filename, 'wb') as outfile:
@@ -200,41 +201,41 @@ class SWFFileReplacer(object):
             outfile.write(original_bytes[3+1+4:s.tags[0].file_offset])
             for tag in s.tags:
                 print('0x{0:04x}({1:5d}) Tag:{2}'.format(
-                    tag.file_offset, tag.tag_length, tag.name
+                    tag.file_offset, tag.header.tag_length, tag.name
                 ))
                 if tag.name == 'DoABC':
-                    tag.tag_length -= 6
                     new_tag = TagDoABCReplacer(self.packages, self.names_map, tag).replace()
                     if new_tag is not tag:
-                        # from IPython import embed;embed();
                         print('modified TagDoABC: {0}'.format(tag.abcName))
                     else:
                         print('not modified TagDoABC: {0}'.format(tag.abcName))
                     out_stream = OutputStream()
+                    # FIXME 默认 TagDoABC 长度都大于63
                     out_stream.writeUI16((new_tag.type<<6) | 0x3f)
-                    out_stream.writeSI32(new_tag.tag_length)
+                    out_stream.writeSI32(new_tag.header.content_length)
                     out_stream.writeSI32(new_tag.lazyInitializeFlag)
-                    out_stream.write(new_tag.abcName)
-                    out_stream.write('\x00')
+                    out_stream.write(new_tag.abcName + '\x00')
                     out_stream.write(new_tag.bytes)
                     outfile.write(out_stream.getvalue())
                 elif tag.name == 'SymbolClass':
                     new_tag = self._replaceTagSymbolClass(tag)
                     out_stream = OutputStream()
-                    if new_tag.tag_length < 0x3f:
-                        out_stream.writeUI16((new_tag.type<<6) | new_tag.tag_length)
+                    if new_tag.header.content_length < 0x3f:
+                        out_stream.writeUI16(
+                            (new_tag.type<<6) | new_tag.header.content_length
+                        )
                     else:
                         out_stream.writeUI16((new_tag.type<<6) | 0x3f)
-                        out_stream.writeUI32(new_tag.tag_length)
+                        out_stream.writeUI32(new_tag.header.content_length)
                     out_stream.writeUI16(len(new_tag.symbols))
                     for symbol in new_tag.symbols:
                         out_stream.writeUI16(symbol.tagId)
                         out_stream.write(symbol.name + '\x00')
                     outfile.write(out_stream.getvalue())
-                    # from IPython import embed;embed();
                 else:
+                    # 其他tag保持原有bytes
                     outfile.write(original_bytes[
-                        tag.file_offset:tag.file_offset + tag.tag_length
+                        tag.file_offset:(tag.file_offset+tag.header.tag_length)
                     ])
                     continue
             file_length = outfile.tell()
@@ -249,8 +250,11 @@ class SWFFileReplacer(object):
             if symbol.name in self.names_map['class']:
                 new_symbol.name = self.names_map['class'][symbol.name]
             new_tag.symbols.append(new_symbol)
+            # 2 for id, others for c-string size
             symbols_length += 2 + len(new_symbol.name) + 1
-        new_tag.tag_length = 2 + symbols_length
+        # 2 for num of symbols, others for symbols' size
+        new_tag.header = copy.copy(tag.header)
+        new_tag.header.content_length = 2 + symbols_length
         return new_tag
 
 
@@ -277,6 +281,7 @@ class TagDoABCReplacer(object):
 
         # 开始生成新的 DoABC tag
         new_tag = TagDoABC()
+        new_tag.header = copy.copy(self.original_tag.header)
         new_tag.abcName = self.original_tag.abcName  # FIXME 替换abcName
         new_tag.lazyInitializeFlag = self.original_tag.lazyInitializeFlag
 
@@ -310,7 +315,7 @@ class TagDoABCReplacer(object):
 
         new_tag.bytes = out_stream.getvalue()
         # 重新计算 tag_length
-        new_tag.tag_length = (
+        new_tag.header.content_length = (
             4                           # flags
             + len(new_tag.abcName) + 1  # name
             + len(new_tag.bytes)        # bytes

@@ -51,7 +51,8 @@ class FuzzyClassGenerator(object):
                         break
                 print('private method {0} -> {1}'.format(method.name, name))
                 method.name = name
-            # 参数名进行混淆(SUPPRESS, 反编译器中的代码不保留参数名)
+            # TODO 公有函数
+            # 参数名进行混淆(SUPPRESS, 在swf文件结构中消除相关信息)
         
         '''
         # getter/setter # FIXME: 默认getter/setter成对出现
@@ -82,4 +83,5 @@ class FuzzyClassGenerator(object):
                         used_fuzzy_variable_names.add(name)
                         break
                 var.name = name
+            # TODO 公有成员变量/常量
         return fuzzy

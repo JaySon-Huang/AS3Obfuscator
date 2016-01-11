@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # encoding=utf-8
-
 from __future__ import print_function
+
+import sys, os.path
+sys.path.append(os.path.abspath('..'))
 
 import asdox
 import asdox.asBuilder
