@@ -300,6 +300,7 @@ class AS3Obfuscator(object):
             print('dumped `self` to `self.pydata`....')
         # self._generate_new_packages(self._packages)
 
+        print('Analysing swf file:{0} ...'.format(swf_filename))
         replacer = SWFFileReplacer(self._packages, self._names_map)
         name, ext = os.path.splitext(swf_filename)
         out_filename = name + '.obfused' + ext
@@ -314,8 +315,10 @@ class AS3Obfuscator(object):
 
         # self._generate_new_packages(self._packages)
 
+        print('Analysing swf file:{0} ...'.format(swf_filename))
         replacer = SWFFileReplacer(self._packages, self._names_map)
         name, ext = os.path.splitext(swf_filename)
         out_filename = name + '.obfused' + ext
+        print('Replacing SWF file {0} -> {1}'.format(swf_filename, out_filename))
         replacer.replace(swf_filename,  out_filename)
         return None

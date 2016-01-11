@@ -39,6 +39,9 @@ IMPORT_DEFINITION.parseWithTabs()
 
 
 class SourceCodeReplacer(object):
+    """
+    替换 .as/.mxml 中的源代码, 但是在替换属性的时候会比较麻烦, 没继续往下写
+    """
 
     @staticmethod
     def replace(source, cls, packages, modulepath, names_map):
@@ -193,7 +196,7 @@ class SWFFileReplacer(object):
         with open(out_filename, 'wb') as outfile:
             outfile.write('FWS')
             outfile.write(struct.pack('B', s.header.version))
-            outfile.write(struct.pack('<I', 0))
+            outfile.write(struct.pack('<I', 0))  # 先占4bytes空间, 最后再seek到这里写入数据
             outfile.write(original_bytes[3+1+4:s.tags[0].file_offset])
             for tag in s.tags:
                 print('0x{0:04x}({1:5d}) Tag:{2}'.format(
@@ -239,13 +242,6 @@ class SWFFileReplacer(object):
             outfile.write(struct.pack('<I', file_length))
 
     def _replaceTagSymbolClass(self, tag):
-        '''
-        if tag.tag_length > 0x3f:
-            tag.tag_length -= 2 + 4
-        else:
-            tag.tag_length -= 2
-        return tag
-        '''
         new_tag = TagSymbolClass()
         symbols_length = 0
         for symbol in tag.symbols:
@@ -294,25 +290,13 @@ class TagDoABCReplacer(object):
 
         # 读入原来的 strings
         self._read_original_strings(stream)
-        '''
-        for index, ns in enumerate(self.original_tag.abcFile.const_pool._namespaces):
-            ns = ns[1]
-            print('({0:2d})`{1}` used as namespace.'.format(
-                ns, self.original_tag.abcFile.const_pool.get_namespace(index)
-            ))
-            if strings[ns] == joinPackageClassName(package, classname):
-                new_strings[ns] = self.get_new_package_class_name(package, self.abcClass)
-                print('Replace by {0}'.format(new_strings[ns]))
-            elif strings[ns] in self.names_map['module']:
-                new_strings[ns] = self.names_map['module'][strings[ns]]
-                print('Replace by {0}'.format(new_strings[ns]))
-        '''
         self._replace_multiname(package, classname)
         self._replace_methods(package, classname)
         self._replace_instances(package, classname)
 
         pprint.pprint(list(enumerate(zip(self.new_strings, self.strings))))
         # 重新写入 strings
+        # FIXME 替换 debug string
         if len(self.new_strings) == 1:
             out_stream.writeU30(0)
         else:
@@ -324,7 +308,6 @@ class TagDoABCReplacer(object):
         left_bytes = stream.read()
         out_stream.write(left_bytes)
 
-        # from IPython import embed;embed();
         new_tag.bytes = out_stream.getvalue()
         # 重新计算 tag_length
         new_tag.tag_length = (
@@ -333,11 +316,11 @@ class TagDoABCReplacer(object):
             + len(new_tag.bytes)        # bytes
         )
         return new_tag
-        pprint.pprint(list(enumerate(self.original_tag.abcFile.const_pool.get_string())))
+        # pprint.pprint(list(enumerate(self.original_tag.abcFile.const_pool.get_string())))
         # pprint.pprint(self.original_tag.abcFile.const_pool.offset)
         # pprint.pprint(self.original_tag.abcFile.const_pool.get_namespace())
         # pprint.pprint(self.original_tag.abcFile.const_pool.get_ns_set())
-        pprint.pprint(self.original_tag.abcFile.const_pool.get_solved_multiname())
+        # pprint.pprint(self.original_tag.abcFile.const_pool.get_solved_multiname())
         # pprint.pprint(self.original_tag.abcFile.methods)
         # pprint.pprint(self.original_tag.abcFile.instances)
 
@@ -357,48 +340,50 @@ class TagDoABCReplacer(object):
                 continue
             info = self.original_tag.abcFile.const_pool.get_solved_multiname(index)
             print(info)
-            if 'namespace' in info:
-                if info['namespace'] == joinPackageClassName(package, classname):
-                    # 方法/成员变量
-                    if   info['name'] in self.abcClass.methods:
-                        new_method_name = self.abcClass.fuzzy.methods[info['name']].name
-                        self.new_strings[multiname.name] = new_method_name
-                        print('Replace by {0}({1})'.format(new_method_name, multiname.name))
-                    elif info['name'] in self.abcClass.variables:
-                        new_var_name = self.abcClass.fuzzy.variables[info['name']].name
-                        self.new_strings[multiname.name] = new_var_name
-                        print('Replace by {0}({1})'.format(new_var_name, multiname.name))
-                elif info['namespace'] == '':
-                    # 根package中定义的类
-                    if   info['name'] in self.packages[''].classes:
-                        new_classname = self.packages[''].classes[info['name']].fuzzy.name
-                        self.new_strings[multiname.name] = new_classname
-                        print('Replace by {0}({1})'.format(new_classname, multiname.name))
-                    # 根package中定义的类的public域
-                    else:
-                        for cls in self.packages[''].classes.values():
-                            if info['name'] in cls.methods:
-                                new_method_name = cls.fuzzy.methods[info['name']].name
-                                self.new_strings[multiname.name] = new_method_name
-                                print('Replace by {0}({1})'.format(new_method_name, multiname.name))
-                            elif info['name'] in cls.variables:
-                                new_var_name = cls.fuzzy.variables[info['name']].name
-                                self.new_strings[multiname.name] = new_var_name
-                                print('Replace by {0}({1})'.format(new_var_name, multiname.name))
-                elif info['namespace'] in self.names_map['module']:
-                    # 其他文件中定义的类
-                    if (info['namespace'] not in self.packages
-                        or (info['name'] not in self.packages[info['namespace']].classes)):
-                        continue
-                    new_classname = self.packages[info['namespace']].classes[info['name']].fuzzy.name
+            if 'namespace' not in info:
+                continue
+            # 处理包含 'namespace' 属性的 multiname
+            if info['namespace'] == joinPackageClassName(package, classname):
+                # 方法/成员变量
+                if   info['name'] in self.abcClass.methods:
+                    new_method_name = self.abcClass.fuzzy.methods[info['name']].name
+                    self.new_strings[multiname.name] = new_method_name
+                    print('Replace by {0}({1})'.format(new_method_name, multiname.name))
+                elif info['name'] in self.abcClass.variables:
+                    new_var_name = self.abcClass.fuzzy.variables[info['name']].name
+                    self.new_strings[multiname.name] = new_var_name
+                    print('Replace by {0}({1})'.format(new_var_name, multiname.name))
+            elif info['namespace'] == '':
+                # 根package中定义的类
+                if   info['name'] in self.packages[''].classes:
+                    new_classname = self.packages[''].classes[info['name']].fuzzy.name
                     self.new_strings[multiname.name] = new_classname
-                    new_namespace = self.names_map['module'][info['namespace']]
-                    # new_namespace = info['namespace']
-                    self.new_strings[self.original_tag.abcFile.const_pool.namespaces[multiname.ns]] = new_namespace
-                    print('Replace by {0}({1}) {2}({3})'.format(
-                        new_classname, multiname.name,
-                        new_namespace, self.original_tag.abcFile.const_pool.namespaces[multiname.ns]
-                    ))
+                    print('Replace by {0}({1})'.format(new_classname, multiname.name))
+                # 根package中定义的类的public域
+                else:
+                    for cls in self.packages[''].classes.values():
+                        if info['name'] in cls.methods:
+                            new_method_name = cls.fuzzy.methods[info['name']].name
+                            self.new_strings[multiname.name] = new_method_name
+                            print('Replace by {0}({1})'.format(new_method_name, multiname.name))
+                        elif info['name'] in cls.variables:
+                            new_var_name = cls.fuzzy.variables[info['name']].name
+                            self.new_strings[multiname.name] = new_var_name
+                            print('Replace by {0}({1})'.format(new_var_name, multiname.name))
+            elif info['namespace'] in self.names_map['module']:
+                # 其他文件中定义的类
+                if (info['namespace'] not in self.packages
+                    or (info['name'] not in self.packages[info['namespace']].classes)):
+                    continue
+                new_classname = self.packages[info['namespace']].classes[info['name']].fuzzy.name
+                self.new_strings[multiname.name] = new_classname
+                new_namespace = self.names_map['module'][info['namespace']]
+                # new_namespace = info['namespace']
+                self.new_strings[self.original_tag.abcFile.const_pool.namespaces[multiname.ns]] = new_namespace
+                print('Replace by {0}({1}) {2}({3})'.format(
+                    new_classname, multiname.name,
+                    new_namespace, self.original_tag.abcFile.const_pool.namespaces[multiname.ns]
+                ))
 
     def _replace_methods(self, package, classname):
         for index, method in enumerate(self.original_tag.abcFile.methods):
