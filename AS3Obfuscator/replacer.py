@@ -16,6 +16,7 @@ range = xrange
 from swf.movie import SWF
 from swf.stream import SWFStream
 from swf.tag import (TagDoABC, TagSymbolClass)
+from swf.abcfile import ABCFile, StMethodInfo
 from swf.abcfile.trait import (
     StTraitClass,
     StTraitFunction,
@@ -151,15 +152,18 @@ class SourceCodeReplacer(object):
         return source
 
 
-# noinspection PyPep8Naming
+# noinspection PyPep8Naming,PyTypeChecker
 class OutputStream(BytesIO):
 
     def writeU30(self, num):
         # FIXME: value >= 128
         while num > 127:
-            self.write(struct.pack('B', ((num&0x7F)|0x80) ))
+            self.write(struct.pack('B', ((num & 0x7F) | 0x80)))
             num >>= 7
         self.write(struct.pack('B', num))
+
+    def writeU8(self, num):
+        self.write(six.int2byte(num))
 
     def writeUI16(self, num):
         self.write(struct.pack('H', num))
@@ -203,6 +207,7 @@ class SWFFileReplacer(object):
                 print('0x{0:04x}({1:5d}) Tag:{2}'.format(
                     tag.file_offset, tag.header.tag_length, tag.name
                 ))
+                # TODO 把tag转换为bytes提炼为一个类的功能
                 if tag.name == 'DoABC':
                     new_tag = TagDoABCReplacer(self.packages, self.names_map, tag).replace()
                     if new_tag is not tag:
@@ -289,12 +294,14 @@ class TagDoABCReplacer(object):
         self.abcClass = self.packages[package].classes[classname]
 
         out_stream = OutputStream()
-        stream = SWFStream(BytesIO(self.original_tag.bytes))
-        pre_bytes = stream.read(self.original_tag.abcFile.const_pool.offset['strings'])
-        out_stream.write(pre_bytes)
+        in_stream = SWFStream(BytesIO(self.original_tag.bytes))
+        bytes_to_keep = in_stream.read(
+            self.original_tag.abcFile.const_pool.offset['strings']
+        )
+        out_stream.write(bytes_to_keep)
 
         # 读入原来的 strings
-        self._read_original_strings(stream)
+        self._read_original_strings(in_stream)
         self._replace_multiname(package, classname)
         self._replace_methods(package, classname)
         self._replace_instances(package, classname)
@@ -310,8 +317,24 @@ class TagDoABCReplacer(object):
                 out_stream.writeU30(len(s))
                 out_stream.write(s)
 
-        left_bytes = stream.read()
-        out_stream.write(left_bytes)
+        num_to_read = (
+            self.original_tag.abcFile.offset['methods']
+            - self.original_tag.abcFile.const_pool.offset['namespaces']
+        )
+        bytes_to_keep = in_stream.read(num_to_read)
+        out_stream.write(bytes_to_keep)
+
+        # 读入原来的 method_info
+        self._read_original_methods(in_stream)
+        # 重新写入 method_info, 并清除其中记录的参数名
+        self._write_methods(out_stream, clean_param_name=True)
+
+        # 读入剩下的bytes
+        bytes_to_keep = in_stream.read()
+        out_stream.write(bytes_to_keep)
+
+        # TODO 丢弃字节中的debug信息
+        
 
         new_tag.bytes = out_stream.getvalue()
         # 重新计算 tag_length
@@ -328,6 +351,8 @@ class TagDoABCReplacer(object):
         # pprint.pprint(self.original_tag.abcFile.const_pool.get_solved_multiname())
         # pprint.pprint(self.original_tag.abcFile.methods)
         # pprint.pprint(self.original_tag.abcFile.instances)
+
+    """ private methods for replace strings in abcFile's constant pool """
 
     def _read_original_strings(self, stream):
         count = stream.readEncodedU32()
@@ -453,3 +478,31 @@ class TagDoABCReplacer(object):
         if info['accessor']:
             name += '/' + info['accessor']
         return name
+
+    """ private methods for replace method_info in abcFile """
+
+    def _read_original_methods(self, in_stream):
+        self.methods = ABCFile.parse_methods(in_stream)
+
+    def _write_methods(self, out_stream, clean_param_name=False):
+        out_stream.writeU30(len(self.methods))
+        for method in self.methods:
+            param_count = len(method.param_types)
+            out_stream.writeU30(param_count)
+            out_stream.writeU30(method.return_type)
+            for param_type in method.param_types:
+                out_stream.writeU30(param_type)
+            out_stream.writeU30(method.name)
+            if clean_param_name:
+                # 去除参数名
+                method.flags &= (~StMethodInfo.HAS_PARAM_NAMES)
+            out_stream.writeU8(method.flags)
+            if method.flags & StMethodInfo.HAS_OPTIONAL:
+                option_count = len(method.options)
+                out_stream.writeU30(option_count)
+                for option in method.options:
+                    out_stream.writeU30(option['val'])
+                    out_stream.writeU8(option['kind'])
+            if method.flags & StMethodInfo.HAS_PARAM_NAMES:
+                for param_name in method.param_names:
+                    out_stream.writeU30(param_name)
