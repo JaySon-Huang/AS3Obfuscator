@@ -19,7 +19,12 @@ from swf.abcfile.trait import (
     StTraitMethod,
     StTraitSlot
 )
-
+from swf.abcfile.instruction import (
+    Instruction,
+    InstructionDebugline,
+    InstructionDebugfile,
+    InstructionDebug
+)
 from utils import (
     filepath2module, module2filepath,
     splitABCName, joinPackageClassName,
@@ -310,35 +315,7 @@ class ABCFileReplacer(object):
             # 这一bit置0, 则转换为bytes时不会写入参数名信息到bytes中
             method.flags &= (~StMethodInfo.HAS_PARAM_NAMES)
 
-        '''
-        # TODO 丢弃字节中的debug信息
-        for method_body in self.abcfile.method_bodies:
-            method_name_index = self.abcfile.methods[method_body.method].name
-            print(
-                'Method name:',
-                self.abcfile.const_pool.get_string(method_name_index)
-            )
-            new_code = ''
-            from swf.abcfile.instruction import (Instruction,
-                                                 InstructionDebugline,
-                                                 InstructionDebugfile,
-                                                 InstructionDebug)
-            for instruct in Instruction.iter_instructions(method_body.code):
-                print(
-                    instruct.resolve(self.abcfile.const_pool),
-                    '({0})'.format(repr(instruct.code.encode('hex')))
-                )
-                if isinstance(instruct,
-                              (InstructionDebugline,
-                               InstructionDebugfile,
-                               InstructionDebug)):
-                    # TODO debug指令的bytes用nop/label填充
-                    # TODO 替换 debug 时显示的 string
-                    pass
-                else:
-                    new_code += instruct.code
-            print(new_code.encode('hex'))
-        '''
+        self._replace_method_body()
         return self.new_abcfile
 
     """ private methods for replace strings in abcFile's constant pool """
@@ -473,8 +450,44 @@ class ABCFileReplacer(object):
             name += '/' + info['accessor']
         return name
 
+    """ private methods for replace instruction in abcFile's method body """
+
+    def _replace_method_body(self):
+        # 丢弃字节中的debug信息, 从而消除局部变量名
+        for method_body in self.new_abcfile.method_bodies:
+            method_name_index = self.new_abcfile.methods[method_body.method].name
+            print(
+                'Method name:',
+                self._get_original_string(method_name_index)
+            )
+            new_code_bytes = InstructionReplacer.replace(
+                self.new_abcfile.const_pool, method_body.code
+            )
+            print(method_body.code.encode('hex'))
+            method_body.code = new_code_bytes
+            print(method_body.code.encode('hex'))
+
 
 class InstructionReplacer(object):
 
-    def replace(self, code_bytes):
-        pass
+    # noinspection PyProtectedMember
+    @staticmethod
+    def replace(const_pool, code_bytes):
+        new_code_bytes = ''
+        for instruct in Instruction.iter_instructions(code_bytes):
+            print(
+                instruct.resolve(const_pool),
+                '({0})'.format(repr(instruct.code.encode('hex')))
+            )
+            if isinstance(instruct,
+                          (InstructionDebugline,
+                           InstructionDebugfile,
+                           InstructionDebug)):
+                # debug指令的bytes用nop/label填充
+                new_code_bytes += '\x02' * len(instruct.code)
+                # 替换 debug 时显示的 string
+                if isinstance(instruct, InstructionDebugfile):
+                    const_pool._strings[instruct.index] = 'WTF_debugfile'
+            else:
+                new_code_bytes += instruct.code
+        return new_code_bytes
