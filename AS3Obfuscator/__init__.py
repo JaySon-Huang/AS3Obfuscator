@@ -19,7 +19,7 @@ from asdox.asBuilder import TidySourceFile
 
 from utils import filepath2module, module2filepath
 
-from replacer import SWFFileReplacer, SourceCodeReplacer
+from replacer import SWFFileReplacer
 from generator import FuzzyClassGenerator
 
 
@@ -293,11 +293,13 @@ class AS3Obfuscator(object):
                     pkg.name, cls,
                     self._names_map['class']
                 )
-        
+
+        pydata_filename = os.path.split(swf_filename)[1].split('.')[0]
+        dump_filename = 'self.' + pydata_filename + '.pydata'
         import pickle
-        with open('self.pydata', 'w') as outfile:
+        with open(dump_filename, 'w') as outfile:
             pickle.dump(self, outfile)
-            print('dumped `self` to `self.pydata`....')
+            print('dumped `self` to `{0}`....'.format(dump_filename))
         # self._generate_new_packages(self._packages)
 
         print('Analysing swf file:{0} ...'.format(swf_filename))
@@ -309,9 +311,12 @@ class AS3Obfuscator(object):
         return None
 
     def debug(self, swf_filename):
-        print('>>debug<< restore self from {0}'.format('self.pydata'))
+        pydata_filename = os.path.split(swf_filename)[1].split('.')[0]
+        print('>>debug<< restore self from {0}'.format(
+            'self.' + pydata_filename + '.pydata'
+        ))
         import pickle
-        with open('self.pydata', 'r') as infile:
+        with open('self.Teach.pydata', 'r') as infile:
             self = pickle.load(infile)
 
         # self._generate_new_packages(self._packages)

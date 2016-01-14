@@ -1,4 +1,4 @@
 names_map.json
-self.pydata
+*.pydata
 
 samples/Bio/

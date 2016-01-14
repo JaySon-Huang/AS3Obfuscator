@@ -3,20 +3,16 @@
 
 from __future__ import print_function
 
-import re
 import copy
 import struct
 import pprint
-import os.path
-from collections import defaultdict
-import six
 from six import BytesIO
-range = xrange
+from collections import defaultdict
 
 from swf.movie import SWF
 from swf.stream import SWFStream
 from swf.tag import (TagDoABC, TagSymbolClass)
-from swf.abcfile import ABCFile, StMethodInfo
+from swf.abcfile import ABCFile, StMethodInfo, StMultiname
 from swf.abcfile.trait import (
     StTraitClass,
     StTraitFunction,
@@ -28,6 +24,10 @@ from utils import (
     filepath2module, module2filepath,
     splitABCName, joinPackageClassName,
 )
+from stream import ABCFileOutputStream
+range = xrange
+
+'''
 from asdox.asGrammar import (
     METHOD_SIGNATURE, METHOD_MODIFIER,
     IDENTIFIER,
@@ -130,8 +130,6 @@ class SourceCodeReplacer(object):
                 # TODO public/protected
                 # print('method', method, method.visibility)
                 pass
-        # from IPython import embed;embed();
-        '''
         # 替换变量
         for var in cls.variables.values():
             if var.visibility == 'private':
@@ -148,31 +146,8 @@ class SourceCodeReplacer(object):
                 # TODO public/protected
                 # print('var', var, var.visibility)
                 pass
-        '''
         return source
-
-
-# noinspection PyPep8Naming,PyTypeChecker
-class OutputStream(BytesIO):
-
-    def writeU30(self, num):
-        # FIXME: value >= 128
-        while num > 127:
-            self.write(struct.pack('B', ((num & 0x7F) | 0x80)))
-            num >>= 7
-        self.write(struct.pack('B', num))
-
-    def writeU8(self, num):
-        self.write(six.int2byte(num))
-
-    def writeUI16(self, num):
-        self.write(struct.pack('H', num))
-
-    def writeUI32(self, num):
-        self.write(struct.pack('<I', num))
-
-    def writeSI32(self, num):
-        self.write(struct.pack('<i', num))
+'''
 
 
 class SWFFileReplacer(object):
@@ -214,9 +189,9 @@ class SWFFileReplacer(object):
                         print('modified TagDoABC: {0}'.format(tag.abcName))
                     else:
                         print('not modified TagDoABC: {0}'.format(tag.abcName))
-                    out_stream = OutputStream()
+                    out_stream = ABCFileOutputStream()
                     # FIXME 默认 TagDoABC 长度都大于63
-                    out_stream.writeUI16((new_tag.type<<6) | 0x3f)
+                    out_stream.writeUI16((new_tag.type << 6) | 0x3f)
                     out_stream.writeSI32(new_tag.header.content_length)
                     out_stream.writeSI32(new_tag.lazyInitializeFlag)
                     out_stream.write(new_tag.abcName + '\x00')
@@ -224,7 +199,7 @@ class SWFFileReplacer(object):
                     outfile.write(out_stream.getvalue())
                 elif tag.name == 'SymbolClass':
                     new_tag = self._replaceTagSymbolClass(tag)
-                    out_stream = OutputStream()
+                    out_stream = ABCFileOutputStream()
                     if new_tag.header.content_length < 0x3f:
                         out_stream.writeUI16(
                             (new_tag.type<<6) | new_tag.header.content_length
@@ -268,8 +243,6 @@ class TagDoABCReplacer(object):
         self.packages = packages
         self.names_map = names_map
         self.original_tag = original_tag
-        self.abcClass = None
-        self.strings = ['*', ]
 
     def replace(self):
         # 官方库返回原来的tag
@@ -278,65 +251,31 @@ class TagDoABCReplacer(object):
             or self.original_tag.abcName.startswith('spark/')):
             return self.original_tag
         # 从ABCName中获取包名,类名
-        package, classname = splitABCName(self.original_tag.abcName)
+        packagename, classname = splitABCName(self.original_tag.abcName)
         # 没有源代码的类(第三方库)返回原来的tag
-        if (package not in self.packages
-                or classname not in self.packages[package].classes):
+        if (packagename not in self.packages
+                or classname not in self.packages[packagename].classes):
             return self.original_tag
+
+        # 从包名,类名中获取源代码中解析出的信息
+        abcclass = self.packages[packagename].classes[classname]
 
         # 开始生成新的 DoABC tag
         new_tag = TagDoABC()
         new_tag.header = copy.copy(self.original_tag.header)
         new_tag.abcName = self.original_tag.abcName  # FIXME 替换abcName
         new_tag.lazyInitializeFlag = self.original_tag.lazyInitializeFlag
-
-        # 从包名,类名中获取源代码中解析出的信息
-        self.abcClass = self.packages[package].classes[classname]
-
-        out_stream = OutputStream()
-        in_stream = SWFStream(BytesIO(self.original_tag.bytes))
-        bytes_to_keep = in_stream.read(
-            self.original_tag.abcFile.const_pool.offset['strings']
+        # 替换abcfile的bytes
+        abcfile = ABCFile()
+        abcfile.parse(SWFStream(BytesIO(self.original_tag.bytes)))
+        replacer = ABCFileReplacer(
+            abcfile, abcclass, packagename, classname,
+            self.names_map, self.packages
         )
-        out_stream.write(bytes_to_keep)
-
-        # 读入原来的 strings
-        self._read_original_strings(in_stream)
-        self._replace_multiname(package, classname)
-        self._replace_methods(package, classname)
-        self._replace_instances(package, classname)
-
-        pprint.pprint(list(enumerate(zip(self.new_strings, self.strings))))
-        # 重新写入 strings
-        # FIXME 替换 debug string
-        if len(self.new_strings) == 1:
-            out_stream.writeU30(0)
-        else:
-            out_stream.writeU30(len(self.new_strings))
-            for s in self.new_strings[1:]:
-                out_stream.writeU30(len(s))
-                out_stream.write(s)
-
-        num_to_read = (
-            self.original_tag.abcFile.offset['methods']
-            - self.original_tag.abcFile.const_pool.offset['namespaces']
-        )
-        bytes_to_keep = in_stream.read(num_to_read)
-        out_stream.write(bytes_to_keep)
-
-        # 读入原来的 method_info
-        self._read_original_methods(in_stream)
-        # 重新写入 method_info, 并清除其中记录的参数名
-        self._write_methods(out_stream, clean_param_name=True)
-
-        # 读入剩下的bytes
-        bytes_to_keep = in_stream.read()
-        out_stream.write(bytes_to_keep)
-
-        # TODO 丢弃字节中的debug信息
-        
-
-        new_tag.bytes = out_stream.getvalue()
+        new_abcfile = replacer.replace()
+        # 把替换后的abcfile转换为bytes
+        from converter import ABCFileConverter
+        new_tag.bytes = ABCFileConverter.to_bytes(new_abcfile)
         # 重新计算 tag_length
         new_tag.header.content_length = (
             4                           # flags
@@ -344,110 +283,165 @@ class TagDoABCReplacer(object):
             + len(new_tag.bytes)        # bytes
         )
         return new_tag
-        # pprint.pprint(list(enumerate(self.original_tag.abcFile.const_pool.get_string())))
-        # pprint.pprint(self.original_tag.abcFile.const_pool.offset)
-        # pprint.pprint(self.original_tag.abcFile.const_pool.get_namespace())
-        # pprint.pprint(self.original_tag.abcFile.const_pool.get_ns_set())
-        # pprint.pprint(self.original_tag.abcFile.const_pool.get_solved_multiname())
-        # pprint.pprint(self.original_tag.abcFile.methods)
-        # pprint.pprint(self.original_tag.abcFile.instances)
+
+
+class ABCFileReplacer(object):
+
+    def __init__(self, abcfile, abcclass, packagename, classname, names_map, packages):
+        self.abcfile = abcfile
+        self.abcclass = abcclass
+        self.new_abcfile = copy.deepcopy(abcfile)
+        self.packagename = packagename
+        self.classname = classname
+        self.names_map = names_map
+        self.packages = packages
+
+    def replace(self):
+        # 读入原来的 strings
+        self._replace_multiname(self.packagename, self.classname)
+        self._replace_instances(self.packagename, self.classname)
+
+        pprint.pprint(list(enumerate(zip(
+            self.new_abcfile.const_pool._strings, self.abcfile.const_pool._strings
+        ))))
+
+        # 丢弃函数传入参数名信息
+        for method in self.new_abcfile.methods:
+            # 这一bit置0, 则转换为bytes时不会写入参数名信息到bytes中
+            method.flags &= (~StMethodInfo.HAS_PARAM_NAMES)
+
+        '''
+        # TODO 丢弃字节中的debug信息
+        for method_body in self.abcfile.method_bodies:
+            method_name_index = self.abcfile.methods[method_body.method].name
+            print(
+                'Method name:',
+                self.abcfile.const_pool.get_string(method_name_index)
+            )
+            new_code = ''
+            from swf.abcfile.instruction import (Instruction,
+                                                 InstructionDebugline,
+                                                 InstructionDebugfile,
+                                                 InstructionDebug)
+            for instruct in Instruction.iter_instructions(method_body.code):
+                print(
+                    instruct.resolve(self.abcfile.const_pool),
+                    '({0})'.format(repr(instruct.code.encode('hex')))
+                )
+                if isinstance(instruct,
+                              (InstructionDebugline,
+                               InstructionDebugfile,
+                               InstructionDebug)):
+                    # TODO debug指令的bytes用nop/label填充
+                    # TODO 替换 debug 时显示的 string
+                    pass
+                else:
+                    new_code += instruct.code
+            print(new_code.encode('hex'))
+        '''
+        return self.new_abcfile
 
     """ private methods for replace strings in abcFile's constant pool """
 
-    def _read_original_strings(self, stream):
-        count = stream.readEncodedU32()
-        for _ in range(count - 1):
-            size = stream.readEncodedU32()
-            if size == 0:
-                self.strings.append('')
-            else:
-                self.strings.append(stream.read(size))
-        self.new_strings = copy.copy(self.strings)
+    # noinspection PyProtectedMember
+    def _get_original_string(self, index):
+        return self.abcfile.const_pool._strings[index]
 
-    def _replace_multiname(self, package, classname):
-        for index, multiname in enumerate(self.original_tag.abcFile.const_pool.multinames):
+    # noinspection PyProtectedMember
+    def _get_new_string(self, index):
+        return self.new_abcfile.const_pool._strings[index]
+
+    # noinspection PyProtectedMember
+    def _set_new_string(self, index, string):
+        self.new_abcfile.const_pool._strings[index] = string
+
+    # noinspection PyProtectedMember
+    def _set_new_namespace(self, index, namespace):
+        str_index = self.new_abcfile.const_pool._namespaces[index][1]
+        self._set_new_string(str_index, namespace)
+
+    def _replace_multiname(self, packagename, classname):
+        for index, multiname in enumerate(self.abcfile.const_pool._multinames):
             if index == 0:
                 continue
-            info = self.original_tag.abcFile.const_pool.get_solved_multiname(index)
-            print(info)
-            if 'namespace' not in info:
+            print(self.abcfile.const_pool.get_multiname_string(index))
+            # 只处理QName/QNameA的 multiname
+            if multiname.kind not in (StMultiname.QName, StMultiname.QNameA):
                 continue
-            # 处理包含 'namespace' 属性的 multiname
-            if info['namespace'] == joinPackageClassName(package, classname):
-                # 方法/成员变量
-                if   info['name'] in self.abcClass.methods:
-                    new_method_name = self.abcClass.fuzzy.methods[info['name']].name
-                    self.new_strings[multiname.name] = new_method_name
+            info = self.abcfile.const_pool.get_multiname(index)
+            if info['namespace'] == joinPackageClassName(packagename, classname):
+                # 私有方法/私有成员变量
+                if info['name'] in self.abcclass.methods:
+                    new_method_name = self.abcclass.fuzzy.methods[info['name']].name
+                    self._set_new_string(multiname.name, new_method_name)
                     print('Replace by {0}({1})'.format(new_method_name, multiname.name))
-                elif info['name'] in self.abcClass.variables:
-                    new_var_name = self.abcClass.fuzzy.variables[info['name']].name
-                    self.new_strings[multiname.name] = new_var_name
+                elif info['name'] in self.abcclass.variables:
+                    new_var_name = self.abcclass.fuzzy.variables[info['name']].name
+                    self._set_new_string(multiname.name, new_var_name)
                     print('Replace by {0}({1})'.format(new_var_name, multiname.name))
             elif info['namespace'] == '':
-                # 根package中定义的类
-                if   info['name'] in self.packages[''].classes:
-                    new_classname = self.packages[''].classes[info['name']].fuzzy.name
-                    self.new_strings[multiname.name] = new_classname
+                # 根package中其他文件中定义的类
+                if info['name'] in self.packages[''].classes:
+                    other_class = self.packages[''].classes[info['name']]
+                    new_classname = other_class.fuzzy.name
+                    self._set_new_string(multiname.name, new_classname)
                     print('Replace by {0}({1})'.format(new_classname, multiname.name))
-                # 根package中定义的类的public域
-                else:
-                    for cls in self.packages[''].classes.values():
-                        if info['name'] in cls.methods:
-                            new_method_name = cls.fuzzy.methods[info['name']].name
-                            self.new_strings[multiname.name] = new_method_name
-                            print('Replace by {0}({1})'.format(new_method_name, multiname.name))
-                        elif info['name'] in cls.variables:
-                            new_var_name = cls.fuzzy.variables[info['name']].name
-                            self.new_strings[multiname.name] = new_var_name
-                            print('Replace by {0}({1})'.format(new_var_name, multiname.name))
             elif info['namespace'] in self.names_map['module']:
-                # 其他文件中定义的类
                 if (info['namespace'] not in self.packages
-                    or (info['name'] not in self.packages[info['namespace']].classes)):
+                    or info['name'] not in self.packages[info['namespace']].classes):
                     continue
-                new_classname = self.packages[info['namespace']].classes[info['name']].fuzzy.name
-                self.new_strings[multiname.name] = new_classname
+                # 其他文件中定义的类
+                other_class = self.packages[info['namespace']].classes[info['name']]
+                # 替换为混淆后的类名
+                new_classname = other_class.fuzzy.name
+                self._set_new_string(multiname.name, new_classname)
+                # 替换为混淆后的包名
                 new_namespace = self.names_map['module'][info['namespace']]
-                # new_namespace = info['namespace']
-                self.new_strings[self.original_tag.abcFile.const_pool.namespaces[multiname.ns]] = new_namespace
+                self._set_new_namespace(multiname.ns, new_namespace)
                 print('Replace by {0}({1}) {2}({3})'.format(
                     new_classname, multiname.name,
-                    new_namespace, self.original_tag.abcFile.const_pool.namespaces[multiname.ns]
+                    new_namespace, self.abcfile.const_pool.namespaces[multiname.ns]
                 ))
 
-    def _replace_methods(self, package, classname):
-        for index, method in enumerate(self.original_tag.abcFile.methods):
-            if self.strings[method.name] == '':
-                continue
-            info = self.parse_class_method_name(self.strings[method.name])
-            new_info = copy.copy(info)
-            if   info['accessor'] == 'get':
-                # Suppress getter
-                # new_info['methodname'] = self.abcClass.fuzzy.getter_methods[info['methodname']].name
-                pass
-            elif info['accessor'] == 'set':
-                # Suppress setter
-                # new_info['methodname'] = self.abcClass.fuzzy.setter_methods[info['methodname']].name
-                pass
-            else:
-                if info['methodname'] not in self.abcClass.fuzzy.methods:
-                    continue
-                new_info['methodname'] = self.abcClass.fuzzy.methods[info['methodname']].name
-            new_info['classname'] = self.get_new_package_class_name(package, self.abcClass)
-            self.new_strings[method.name] = self.combine_class_method_info(new_info)
-            print('Replace by {0}({1})'.format(self.new_strings[method.name], method.name))
-
-    def _replace_instances(self, package, classname):
-        for instance in self.original_tag.abcFile.instances:
+    def _replace_instances(self, packagename, classname):
+        for instance in self.abcfile.instances:
             for trait in instance.traits:
-                if not isinstance(trait, StTraitMethod):
-                    continue
-                name_index = self.original_tag.abcFile.const_pool.multinames[trait.name].name
-                new_name_index = self.original_tag.abcFile.methods[trait.method].name
-                self.new_strings[name_index] = self.parse_class_method_name(self.new_strings[new_name_index])['methodname']
-                print("instance's trait methodname Replace by {0}({1})".format(
-                    self.new_strings[name_index], name_index
-                ))
+                if isinstance(trait, StTraitMethod):
+                    self._replace_method_trait(trait, packagename)
+                else:
+                    # TODO 常量等其他 strait
+                    pass
+
+    def _replace_method_trait(self, trait, packagename):
+        methodname_index = self.abcfile.methods[trait.method].name
+        info = self.parse_class_method_name(self._get_original_string(methodname_index))
+        new_info = copy.copy(info)
+        if info['accessor'] == 'get':
+            # Suppress getter
+            # new_info['methodname'] = self.abcclass.fuzzy.getter_methods[info['methodname']].name
+            pass
+        elif info['accessor'] == 'set':
+            # Suppress setter
+            # new_info['methodname'] = self.abcclass.fuzzy.setter_methods[info['methodname']].name
+            pass
+        else:
+            if info['methodname'] not in self.abcclass.fuzzy.methods:
+                return
+            new_info['methodname'] = self.abcclass.fuzzy.methods[info['methodname']].name
+        new_info['classname'] = self.get_new_package_class_name(packagename, self.abcclass)
+        self._set_new_string(
+            methodname_index,
+            self.combine_class_method_info(new_info)
+        )
+        directname_index = self.abcfile.const_pool._multinames[trait.name].name
+        self._set_new_string(
+            directname_index,
+            new_info['methodname']
+        )
+        print("instance's method trait name Replace by {0}({1}) {2}({3})".format(
+            self._get_new_string(directname_index), directname_index,
+            self._get_new_string(methodname_index), methodname_index
+        ))
 
     def get_new_package_class_name(self, package, cls):
         new_package = self.names_map['module'][package]
@@ -479,30 +473,8 @@ class TagDoABCReplacer(object):
             name += '/' + info['accessor']
         return name
 
-    """ private methods for replace method_info in abcFile """
 
-    def _read_original_methods(self, in_stream):
-        self.methods = ABCFile.parse_methods(in_stream)
+class InstructionReplacer(object):
 
-    def _write_methods(self, out_stream, clean_param_name=False):
-        out_stream.writeU30(len(self.methods))
-        for method in self.methods:
-            param_count = len(method.param_types)
-            out_stream.writeU30(param_count)
-            out_stream.writeU30(method.return_type)
-            for param_type in method.param_types:
-                out_stream.writeU30(param_type)
-            out_stream.writeU30(method.name)
-            if clean_param_name:
-                # 去除参数名
-                method.flags &= (~StMethodInfo.HAS_PARAM_NAMES)
-            out_stream.writeU8(method.flags)
-            if method.flags & StMethodInfo.HAS_OPTIONAL:
-                option_count = len(method.options)
-                out_stream.writeU30(option_count)
-                for option in method.options:
-                    out_stream.writeU30(option['val'])
-                    out_stream.writeU8(option['kind'])
-            if method.flags & StMethodInfo.HAS_PARAM_NAMES:
-                for param_name in method.param_names:
-                    out_stream.writeU30(param_name)
+    def replace(self, code_bytes):
+        pass
