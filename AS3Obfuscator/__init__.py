@@ -3,10 +3,8 @@
 
 from __future__ import print_function
 
-import re
 import os
 import os.path
-import copy
 import json
 import random
 random.seed('0362')
@@ -14,11 +12,8 @@ import string
 import shutil
 
 import asdox.asBuilder
-from asdox.asBuilder import TidySourceFile
-
 
 from utils import filepath2module, module2filepath
-
 from replacer import SWFFileReplacer
 from generator import FuzzyClassGenerator
 
@@ -32,12 +27,13 @@ class AS3Obfuscator(object):
     MAP_TYPE_CLASS = 0
     MAP_TYPE_MODULE = 1
 
-    def __init__(self, srcDir, dstDir,
+    def __init__(self, src_dir, dst_dir,
                  ignore_paths=None, ignore_classes=None,
                  keep_classname_classes=None):
+        self.is_move_source_codes = False
         self._paths = {
-            'src': srcDir,
-            'dst': dstDir
+            'src': src_dir,
+            'dst': dst_dir
         }
         self._names_map = {
             'module': {},
@@ -52,12 +48,12 @@ class AS3Obfuscator(object):
                 os.path.join(self._paths['src'], path)
                 for path in ignore_paths
             ]
-        if ignore_classes is not None:
-            self._ignore_classes = ignore_classes
-        if keep_classname_classes is not None:
-            self._keep_classname_classes = keep_classname_classes
         else:
-            self._keep_classname_classes = []
+            self._ignore_paths = []
+        self._ignore_classes = ignore_classes if ignore_classes is not None else []
+        self._keep_classname_classes = (
+            keep_classname_classes if keep_classname_classes is not None else []
+        )
 
     def _markup_names_map(self, type_, old, new):
         if type_ == self.MAP_TYPE_CLASS:
@@ -67,15 +63,15 @@ class AS3Obfuscator(object):
             self._names_map['module'][old] = new
             self._names_map_r['module'][new] = old
 
-    def _getOldModuleMeta(self, dir_path, dirname):
-        '''
+    def _get_old_module_meta(self, dir_path, dirname):
+        """
         _getOldModuleMeta('../samples/Bio_src/Teach/Item/', 'Biology')
         >> {
             'name': 'Biology',
             'full_name': 'Teach.Item.Biology',
             'full_path': 'Teach/Item/Biology',
         }
-        '''
+        """
         meta = {}
         meta['name'] = dirname
         meta['full_path'] = os.path.relpath(
@@ -85,7 +81,7 @@ class AS3Obfuscator(object):
         meta['full_name'] = filepath2module(meta['full_path'])
         return meta
     
-    def _getNewModuleMeta(self, dir_path):
+    def _get_new_module_meta(self, dir_path):
         meta = {}
         while True:
             meta['name'] = ''.join([
@@ -100,7 +96,7 @@ class AS3Obfuscator(object):
                 break
         return meta
 
-    def _getOldClassMeta(self, dir_path, filename):
+    def _get_old_class_meta(self, dir_path, filename):
         meta = {}
         meta['name'], meta['ext'] = os.path.splitext(filename)
         relative_path = os.path.relpath(dir_path, self._paths['src'])
@@ -116,8 +112,8 @@ class AS3Obfuscator(object):
             )
         return meta
 
-    def _getNewClassMeta(self, dir_path, filename):
-        '''获得唯一的类名'''
+    def _get_new_class_meta(self, dir_path, filename):
+        """ 获得唯一的类名 """
         meta = {}
         relative_path = os.path.relpath(dir_path, self._paths['dst'])
         while True:
@@ -143,26 +139,27 @@ class AS3Obfuscator(object):
                 break
         return meta
 
-    def _reproduce_dir(self, src_root, dst_root):
-        '''
+    def _reproduce_dir(self, src_root, dst_root, is_move_files=False):
+        """
         递归地处理目录
-        '''
+        """
         # 对 src_root 下的目录/文件进行混淆
         for old_name in os.listdir(src_root):
             old_path = os.path.join(src_root, old_name)
             if os.path.isfile(old_path):
-                self._reproduce_file(src_root, dst_root, old_name)
+                self._reproduce_file(src_root, dst_root, old_name, is_move_files)
             elif os.path.isdir(old_path):
                 if old_path in self._ignore_paths:
                     # 在忽略目录中, 直接拷贝到目标目录
-                    shutil.copytree(
-                        old_path,
-                        os.path.join(dst_root, old_name)
-                    )
+                    if is_move_files:
+                        shutil.copytree(
+                            old_path,
+                            os.path.join(dst_root, old_name)
+                        )
                 else:
                     # 不在忽略目录中, 修改目录名称
-                    old_module_meta = self._getOldModuleMeta(src_root, old_name)
-                    new_module_meta = self._getNewModuleMeta(dst_root)
+                    old_module_meta = self._get_old_module_meta(src_root, old_name)
+                    new_module_meta = self._get_new_module_meta(dst_root)
                     # 记录映射关系
                     self._markup_names_map(
                         self.MAP_TYPE_MODULE,
@@ -177,50 +174,56 @@ class AS3Obfuscator(object):
                     new_path = os.path.join(
                         dst_root, new_module_meta['name']
                     )
-                    os.makedirs(new_path)
+                    if is_move_files:
+                        os.makedirs(new_path)
                     # 递归处理子目录
                     self._reproduce_dir(old_path, new_path)
 
-    def _reproduce_file(self, src_root, dst_root, filename):
-        '''
+    def _reproduce_file(self, src_root, dst_root, filename, is_move_files):
+        """
         对文件进行处理
-        '''
+        """
         if filename in self._ignore_classes:
             # 忽略的类, 直接复制到目标文件夹下
-            shutil.copy2(
-                os.path.join(src_root, filename),
-                dst_root
-            )
+            if is_move_files:
+                shutil.copy2(
+                    os.path.join(src_root, filename),
+                    dst_root
+                )
             return
-        old_cls_meta = self._getOldClassMeta(src_root, filename)
+        old_cls_meta = self._get_old_class_meta(src_root, filename)
         if old_cls_meta['ext'].lower() not in ('.as', '.mxml'):
             # 非 .as .mxml, 直接复制文件到目标文件夹下
-            shutil.copy2(
-                os.path.join(src_root, filename),
-                dst_root
-            )
+            if is_move_files:
+                shutil.copy2(
+                    os.path.join(src_root, filename),
+                    dst_root
+                )
             return
         elif old_cls_meta['ext'].lower() == '.mxml':
             # mxml 文件
             self._builder.addMXMLSource(
                 os.path.join(src_root, filename),
-                pkgname=filepath2module(os.path.split(old_cls_meta['full_path'])[0])
+                pkgname=filepath2module(
+                    os.path.split(old_cls_meta['full_path'])[0]
+                )
             )
             self._markup_names_map(
                 self.MAP_TYPE_CLASS,
                 old_cls_meta['full_path'],
                 old_cls_meta['full_path']
             )
-            shutil.copy2(
-                os.path.join(src_root, filename),
-                dst_root
-            )
+            if is_move_files:
+                shutil.copy2(
+                    os.path.join(src_root, filename),
+                    dst_root
+                )
             return
         else:
             # as 文件
             self._builder.addSource(os.path.join(src_root, filename))
             # 生成新的类名
-            new_cls_meta = self._getNewClassMeta(dst_root, filename)
+            new_cls_meta = self._get_new_class_meta(dst_root, filename)
             self._markup_names_map(
                 self.MAP_TYPE_CLASS,
                 old_cls_meta['full_path'],
@@ -233,50 +236,23 @@ class AS3Obfuscator(object):
             new_path_name = os.path.join(
                 dst_root, new_cls_meta['name']+old_cls_meta['ext']
             )
-            shutil.copy2(
-                os.path.join(src_root, filename),
-                new_path_name
-            )
+            if is_move_files:
+                shutil.copy2(
+                    os.path.join(src_root, filename),
+                    new_path_name
+                )
             return
-
-    def _generate_new_packages(self, packages):
-        for pkg in packages.values():
-            for cls in pkg.classes.values():
-                self._generate_new_cls(packages, pkg.name, cls)
-
-    def _generate_new_cls(self, packages, modulepath, cls):
-        print('handling class: {0} -> {1}'.format(
-            cls.full_name,
-            cls.fuzzy.full_name
-        ))
-        try:
-            cls_full_path = os.path.join(
-                self._paths['dst'],
-                module2filepath(cls.fuzzy.full_name)+'.as'
-            )
-            with open(cls_full_path, 'r') as infile:
-                source = infile.read()
-            source = TidySourceFile.tidy(TidySourceFile.trim_comments(source))
-
-            source = SourceCodeReplacer.replace(
-                source, cls, packages, modulepath, self._names_map
-            )
-            # from IPython import embed;embed();
-            with open(cls_full_path, 'w') as outfile:
-                source = outfile.write(source)
-        except IOError:
-            # FIXME mxml文件
-            pass
 
     def run(self, swf_filename):
         print('parsing original source files in {0} ...'.format(
-                self._paths['src']
+            self._paths['src']
         ))
         self._builder = asdox.asBuilder.Builder()
-        print('clean up {0} ...'.format(self._paths['dst']))
-        if os.path.exists(self._paths['dst']):
-            shutil.rmtree(self._paths['dst'])
-        os.makedirs(self._paths['dst'])
+        if self.is_move_source_codes:
+            print('clean up {0} ...'.format(self._paths['dst']))
+            if os.path.exists(self._paths['dst']):
+                shutil.rmtree(self._paths['dst'])
+            os.makedirs(self._paths['dst'])
         # 收集混淆包名, 类名
         self._reproduce_dir(self._paths['src'], self._paths['dst'])
         self._names_map['module'][''] = ''
@@ -300,13 +276,12 @@ class AS3Obfuscator(object):
         with open(dump_filename, 'w') as outfile:
             pickle.dump(self, outfile)
             print('dumped `self` to `{0}`....'.format(dump_filename))
-        # self._generate_new_packages(self._packages)
 
         print('Analysing swf file:{0} ...'.format(swf_filename))
         replacer = SWFFileReplacer(self._packages, self._names_map)
         name, ext = os.path.splitext(swf_filename)
         out_filename = name + '.obfused' + ext
-        replacer.replace(swf_filename,  out_filename)
+        replacer.replace(swf_filename, out_filename)
         print('Replacing SWF file {0} -> {1}'.format(swf_filename, out_filename))
         return None
 
@@ -319,12 +294,10 @@ class AS3Obfuscator(object):
         with open('self.Teach.pydata', 'r') as infile:
             self = pickle.load(infile)
 
-        # self._generate_new_packages(self._packages)
-
         print('Analysing swf file:{0} ...'.format(swf_filename))
         replacer = SWFFileReplacer(self._packages, self._names_map)
         name, ext = os.path.splitext(swf_filename)
         out_filename = name + '.obfused' + ext
-        replacer.replace(swf_filename,  out_filename)
+        replacer.replace(swf_filename, out_filename)
         print('Replacing SWF file {0} -> {1}'.format(swf_filename, out_filename))
         return None
