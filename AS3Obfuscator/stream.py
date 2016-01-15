@@ -10,6 +10,19 @@ from six import BytesIO
 # noinspection PyPep8Naming,PyTypeChecker
 class ABCFileOutputStream(BytesIO):
 
+    def getvalue(self):
+        def trans(s):
+            if isinstance(s, unicode):
+                return bytearray(s, encoding='utf-8')
+            else:
+                return bytearray(s)
+        if self.buflist:
+            self.buflist = list(map(trans, self.buflist))
+            self.buf = bytearray()
+            self.buf = self.buf.join(self.buflist)
+            self.buflist = []
+        return self.buf
+
     def writeU8(self, num):
         self.write(six.int2byte(num))
 

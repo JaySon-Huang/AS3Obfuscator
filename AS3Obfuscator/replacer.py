@@ -351,11 +351,11 @@ class ABCFileReplacer(object):
                 if info['name'] in self.abcclass.methods:
                     new_method_name = self.abcclass.fuzzy.methods[info['name']].name
                     self._set_new_string(multiname.name, new_method_name)
-                    print('Replace by {0}({1})'.format(new_method_name, multiname.name))
+                    print(u'Replace by {0}({1})'.format(new_method_name, multiname.name))
                 elif info['name'] in self.abcclass.variables:
                     new_var_name = self.abcclass.fuzzy.variables[info['name']].name
                     self._set_new_string(multiname.name, new_var_name)
-                    print('Replace by {0}({1})'.format(new_var_name, multiname.name))
+                    print(u'Replace by {0}({1})'.format(new_var_name, multiname.name))
             elif info['namespace'] == '':
                 # 根package中其他文件中定义的类
                 if info['name'] in self.packages[''].classes:
@@ -375,7 +375,7 @@ class ABCFileReplacer(object):
                 # 替换为混淆后的包名
                 new_namespace = self.names_map['module'][info['namespace']]
                 self._set_new_namespace(multiname.ns, new_namespace)
-                print('Replace by {0}({1}) {2}({3})'.format(
+                print(u'Replace by {0}({1}) {2}({3})'.format(
                     new_classname, multiname.name,
                     new_namespace, self.abcfile.const_pool.namespaces[multiname.ns]
                 ))
@@ -415,7 +415,7 @@ class ABCFileReplacer(object):
             directname_index,
             new_info['methodname']
         )
-        print("instance's method trait name Replace by {0}({1}) {2}({3})".format(
+        print(u"instance's method trait name Replace by {0}({1}) {2}({3})".format(
             self._get_new_string(directname_index), directname_index,
             self._get_new_string(methodname_index), methodname_index
         ))
@@ -443,11 +443,11 @@ class ABCFileReplacer(object):
     def combine_class_method_info(info):
         name = info['classname']
         if info['visibility']:
-            name += '/{0}:{1}'.format(info['visibility'], info['methodname'])
+            name += u'/{0}:{1}'.format(info['visibility'], info['methodname'])
         else:
-            name += '/' + info['methodname']
+            name += u'/' + info['methodname']
         if info['accessor']:
-            name += '/' + info['accessor']
+            name += u'/' + info['accessor']
         return name
 
     """ private methods for replace instruction in abcFile's method body """
@@ -457,7 +457,7 @@ class ABCFileReplacer(object):
         for method_body in self.new_abcfile.method_bodies:
             method_name_index = self.new_abcfile.methods[method_body.method].name
             print(
-                'Method name:',
+                u'Method name:',
                 self._get_original_string(method_name_index)
             )
             new_code_bytes = InstructionReplacer.replace(
@@ -487,7 +487,7 @@ class InstructionReplacer(object):
                 new_code_bytes += '\x02' * len(instruct.code)
                 # 替换 debug 时显示的 string
                 if isinstance(instruct, InstructionDebugfile):
-                    const_pool._strings[instruct.index] = 'WTF_debugfile'
+                    const_pool._strings[instruct.index] = ''
             else:
                 new_code_bytes += instruct.code
         return new_code_bytes

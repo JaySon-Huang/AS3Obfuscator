@@ -16,8 +16,14 @@ from utils import filepath2module, module2filepath
 class FuzzyClassGenerator(object):
 
     NAMESET = {
-        'method': string.ascii_letters,
-        'variable': string.ascii_letters,
+        'method': (
+            string.ascii_letters
+            + '{|}!"#$%&\'()*+;<=>'
+        ),
+        'variable': (
+            string.ascii_letters
+            + '{|}!"#$%&\'()*+;<=>'
+        ),
     }
 
     @classmethod
@@ -49,7 +55,7 @@ class FuzzyClassGenerator(object):
                     if name not in used_fuzzy_method_names:
                         used_fuzzy_method_names.add(name)
                         break
-                print('private method {0} -> {1}'.format(method.name, name))
+                print(u'private method {0} -> {1}'.format(method.name, name))
                 method.name = name
             # TODO 公有函数
             # 参数名进行混淆(SUPPRESS, 在swf文件结构中消除相关信息)
