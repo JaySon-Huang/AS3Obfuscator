@@ -12,7 +12,7 @@ from collections import defaultdict
 from swf.movie import SWF
 from swf.stream import SWFStream
 from swf.tag import (TagDoABC, TagSymbolClass)
-from swf.abcfile import ABCFile, StMethodInfo, StMultiname
+from swf.abcfile import ABCFile, StMethodInfo, StMultiname, CONSTANT_KIND_NAME
 from swf.abcfile.trait import (
     StTraitClass,
     StTraitFunction,
@@ -23,7 +23,9 @@ from swf.abcfile.instruction import (
     Instruction,
     InstructionDebugline,
     InstructionDebugfile,
-    InstructionDebug
+    InstructionDebug,
+    InstructionFindpropstrict,
+    InstructionGetproperty,
 )
 from utils import (
     filepath2module, module2filepath,
@@ -262,13 +264,14 @@ class TagDoABCReplacer(object):
                 or classname not in self.packages[packagename].classes):
             return self.original_tag
 
+        print('Obfuscating Tag', self.original_tag.abcName, '...')
         # 从包名,类名中获取源代码中解析出的信息
         abcclass = self.packages[packagename].classes[classname]
 
         # 开始生成新的 DoABC tag
         new_tag = TagDoABC()
         new_tag.header = copy.copy(self.original_tag.header)
-        new_tag.abcName = self.original_tag.abcName  # FIXME 替换abcName
+        new_tag.abcName = '' #self.original_tag.abcName  # FIXME 替换abcName
         new_tag.lazyInitializeFlag = self.original_tag.lazyInitializeFlag
         # 替换abcfile的bytes
         abcfile = ABCFile()
@@ -292,7 +295,8 @@ class TagDoABCReplacer(object):
 
 class ABCFileReplacer(object):
 
-    def __init__(self, abcfile, abcclass, packagename, classname, names_map, packages):
+    def __init__(self, abcfile, abcclass, packagename, classname, names_map, packages,
+                 is_replace_public_constant=False):
         self.abcfile = abcfile
         self.abcclass = abcclass
         self.new_abcfile = copy.deepcopy(abcfile)
@@ -300,11 +304,13 @@ class ABCFileReplacer(object):
         self.classname = classname
         self.names_map = names_map
         self.packages = packages
+        self.is_replace_public_constant = is_replace_public_constant
 
     def replace(self):
         # 读入原来的 strings
         self._replace_multiname(self.packagename, self.classname)
         self._replace_instances(self.packagename, self.classname)
+        self._replace_classes(self.packagename, self.classname)
 
         pprint.pprint(list(enumerate(zip(
             self.new_abcfile.const_pool._strings, self.abcfile.const_pool._strings
@@ -389,6 +395,25 @@ class ABCFileReplacer(object):
                     # TODO 常量等其他 strait
                     pass
 
+    # noinspection PyProtectedMember
+    def _replace_classes(self, packagename, classname):
+        # 类静态成员的slot
+        for class_ in self.abcfile.classes:
+            for trait in class_.traits:
+                if self.is_replace_public_constant and isinstance(trait, StTraitSlot):
+                    print(
+                        'Name:',
+                        self.abcfile.const_pool.get_multiname_string(trait.name)
+                    )
+                    info = self.abcfile.const_pool.get_multiname(trait.name)
+                    if info['name'] in self.abcclass.variables:
+                        const_name_index = self.abcfile.const_pool._multinames[trait.name].name
+                        self._set_new_string(
+                            const_name_index,
+                            self.abcclass.fuzzy.variables[info['name']].name
+                        )
+                        print('Replace by', self._get_new_string(const_name_index))
+
     def _replace_method_trait(self, trait, packagename):
         methodname_index = self.abcfile.methods[trait.method].name
         info = self.parse_class_method_name(self._get_original_string(methodname_index))
@@ -460,8 +485,11 @@ class ABCFileReplacer(object):
                 u'Method name:',
                 self._get_original_string(method_name_index)
             )
-            new_code_bytes = InstructionReplacer.replace(
-                self.new_abcfile.const_pool, method_body.code
+            replacer = InstructionReplacer(self.names_map, self.packages)
+            new_code_bytes = replacer.replace(
+                self.new_abcfile.const_pool, method_body.code,
+                self.abcfile.const_pool,
+                is_replace_public_constant=self.is_replace_public_constant
             )
             print(method_body.code.encode('hex'))
             method_body.code = new_code_bytes
@@ -470,24 +498,64 @@ class ABCFileReplacer(object):
 
 class InstructionReplacer(object):
 
+    def __init__(self, names_map, packages):
+        self.names_map = names_map
+        self.packages = packages
+
     # noinspection PyProtectedMember
-    @staticmethod
-    def replace(const_pool, code_bytes):
+    def replace(self, new_const_pool, code_bytes, const_pool,
+                is_remove_local_name=True,
+                is_replace_public_constant=False):
         new_code_bytes = ''
+        print('Replacing Debug messages...')
         for instruct in Instruction.iter_instructions(code_bytes):
             print(
                 instruct.resolve(const_pool),
                 '({0})'.format(repr(instruct.code.encode('hex')))
             )
-            if isinstance(instruct,
-                          (InstructionDebugline,
-                           InstructionDebugfile,
-                           InstructionDebug)):
-                # debug指令的bytes用nop/label填充
-                new_code_bytes += '\x02' * len(instruct.code)
-                # 替换 debug 时显示的 string
-                if isinstance(instruct, InstructionDebugfile):
-                    const_pool._strings[instruct.index] = ''
+            if (is_remove_local_name
+                and instruct.FORM in
+                    (InstructionDebugline.FORM,
+                     InstructionDebugfile.FORM,
+                     InstructionDebug.FORM)):
+                    # debug指令的bytes用nop/label填充
+                    new_code_bytes += '\x02' * len(instruct.code)
+                    # 替换 debug 时显示的 string
+                    if isinstance(instruct, InstructionDebugfile):
+                        new_const_pool._strings[instruct.index] = ''
             else:
                 new_code_bytes += instruct.code
+
+        if is_replace_public_constant:
+            # 替换类公有常量名在其他代码中的引用
+            print('Replacing public constant names...')
+            instructions = Instruction.parse_code(code_bytes)
+            for index, instruct in enumerate(instructions):
+                if instruct.FORM == InstructionFindpropstrict.FORM:
+                    next1_instruct = instructions[index + 1]
+                    next2_instruct = instructions[index + 2]
+                    if (next1_instruct.FORM == InstructionGetproperty.FORM
+                        and next2_instruct.FORM == InstructionGetproperty.FORM):
+                        print(
+                            instruct.resolve(const_pool),
+                            '({0})'.format(repr(instruct.code.encode('hex')))
+                        )
+                        if (const_pool._multinames[instruct.index].kind
+                            not in (StMultiname.QName, StMultiname.QNameA)):
+                            continue
+                        info = const_pool.get_multiname(instruct.index)
+                        if (info['namespace'] not in self.packages
+                            or info['name'] not in self.packages[info['namespace']].classes):
+                            print('This Constant is not replaceable.')
+                            continue
+                        cls = self.packages[info['namespace']].classes[info['name']]
+                        print(
+                            next2_instruct.resolve(const_pool),
+                            '({0})'.format(repr(instruct.code.encode('hex')))
+                        )
+                        info = const_pool.get_multiname(next2_instruct.index)
+                        const = cls.fuzzy.variables[info['name']]
+                        const_name_index = const_pool._multinames[next2_instruct.index].name
+                        # 替换为混淆后的常量名
+                        new_const_pool._strings[const_name_index] = const.name
         return new_code_bytes

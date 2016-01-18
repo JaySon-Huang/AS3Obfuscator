@@ -90,5 +90,15 @@ class FuzzyClassGenerator(object):
                         used_fuzzy_variable_names.add(name)
                         break
                 var.name = name
+            elif var.isConstant and var.isStatic:
+                while True:
+                    name = ''.join([
+                        random.choice(cls.NAMESET['variable'])
+                        for _ in range(5)
+                    ])
+                    if name not in used_fuzzy_variable_names:
+                        used_fuzzy_variable_names.add(name)
+                        break
+                var.name = name
             # TODO 公有成员变量/常量
         return fuzzy
