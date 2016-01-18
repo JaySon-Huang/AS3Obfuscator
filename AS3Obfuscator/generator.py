@@ -10,6 +10,7 @@ import random
 random.seed('0362')
 import string
 
+from . import FUCKUP_PUNCTUATIONS
 from utils import filepath2module, module2filepath
 
 
@@ -18,11 +19,11 @@ class FuzzyClassGenerator(object):
     NAMESET = {
         'method': (
             string.ascii_letters
-            + '{|}!"#$%&\'()*+;<=>'
+            + FUCKUP_PUNCTUATIONS
         ),
         'variable': (
             string.ascii_letters
-            + '{|}!"#$%&\'()*+;<=>'
+            + FUCKUP_PUNCTUATIONS
         ),
     }
 

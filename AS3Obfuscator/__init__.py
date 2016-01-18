@@ -18,11 +18,22 @@ from replacer import SWFFileReplacer
 from generator import FuzzyClassGenerator
 
 
+FUCKUP_PUNCTUATIONS = '{|}!#$%()*+;='
+
+
 class AS3Obfuscator(object):
 
     NAMESET = {
-        'module': string.ascii_uppercase,
-        'class': string.ascii_letters + string.digits,
+        # 'module': string.ascii_uppercase,
+        'module': (
+            string.ascii_letters
+            + FUCKUP_PUNCTUATIONS
+        ),
+        # 'class': string.ascii_letters + string.digits,
+        'class': (
+            string.ascii_letters + string.digits
+            + FUCKUP_PUNCTUATIONS
+        ),
     }
     MAP_TYPE_CLASS = 0
     MAP_TYPE_MODULE = 1
