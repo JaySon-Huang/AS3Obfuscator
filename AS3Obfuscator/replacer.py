@@ -185,7 +185,9 @@ class SWFFileReplacer(object):
             outfile.write('FWS')
             outfile.write(struct.pack('B', s.header.version))
             outfile.write(struct.pack('<I', 0))  # 先占4bytes空间, 最后再seek到这里写入数据
-            outfile.write(original_bytes[3+1+4:s.tags[0].file_offset])
+            outfile.write(original_bytes[
+                3 + 1 + 4:s.tags[0].file_offset  # copy 'FWS' + version + length 到 第一个tag之间的内容
+            ])
             for tag in s.tags:
                 print('0x{0:04x}({1:5d}) Tag:{2}'.format(
                     tag.file_offset, tag.header.tag_length, tag.name
@@ -193,19 +195,19 @@ class SWFFileReplacer(object):
                 # tag替换内容提炼为Replacer系列类的功能
                 # tag转换为bytes提炼为Converter系列类的功能
                 if tag.type == TagDoABC.TYPE:
-                    new_tag = TagDoABCReplacer(self.packages, self.names_map, tag).replace()
+                    new_tag = TagDoABCReplacer(self.packages, self.names_map).replace(tag)
                     if new_tag is not tag:
                         print('modified TagDoABC: {0}'.format(tag.abcName))
                     else:
                         print('not modified TagDoABC: {0}'.format(tag.abcName))
                     outfile.write(TagDoABCConverter.to_bytes(new_tag))
                 elif tag.type == TagSymbolClass.TYPE:
-                    new_tag = TagSymbolReplacer(self.packages, self.names_map, tag).replace()
+                    new_tag = TagSymbolReplacer(self.packages, self.names_map).replace(tag)
                     outfile.write(TagSymbolConverter.to_bytes(new_tag))
                 else:
                     # 其他tag保持原有bytes
                     outfile.write(original_bytes[
-                        tag.file_offset:(tag.file_offset+tag.header.tag_length)
+                        tag.file_offset:(tag.file_offset + tag.header.tag_length)
                     ])
                     continue
             file_length = outfile.tell()
@@ -214,15 +216,14 @@ class SWFFileReplacer(object):
 
 
 class TagSymbolReplacer(object):
-    def __init__(self, packages, names_map, original_tag):
+    def __init__(self, packages, names_map):
         self.packages = packages
         self.names_map = names_map
-        self.original_tag = original_tag
 
-    def replace(self):
+    def replace(self, original_tag):
         new_tag = TagSymbolClass()
         symbols_length = 0
-        for symbol in self.original_tag.symbols:
+        for symbol in original_tag.symbols:
             new_symbol = copy.copy(symbol)
             if symbol.name in self.names_map['class']:
                 new_symbol.name = self.names_map['class'][symbol.name]
@@ -230,43 +231,42 @@ class TagSymbolReplacer(object):
             # 2 for id, others for c-string size
             symbols_length += 2 + len(new_symbol.name) + 1
         # 2 for num of symbols, others for symbols' size
-        new_tag.header = copy.copy(self.original_tag.header)
+        new_tag.header = copy.copy(original_tag.header)
         new_tag.header.content_length = 2 + symbols_length
         return new_tag
 
 
 class TagDoABCReplacer(object):
-    def __init__(self, packages, names_map, original_tag):
+    def __init__(self, packages, names_map):
         self.packages = packages
         self.names_map = names_map
-        self.original_tag = original_tag
 
-    def replace(self):
+    def replace(self, original_tag):
         # 官方库返回原来的tag
-        if (self.original_tag.abcName.startswith('flashx/')
-            or self.original_tag.abcName.startswith('mx/')
-            or self.original_tag.abcName.startswith('spark/')):
-            return self.original_tag
+        if (original_tag.abcName.startswith('flashx/')
+                or original_tag.abcName.startswith('mx/')
+                or original_tag.abcName.startswith('spark/')):
+            return original_tag
         # 从ABCName中获取包名,类名
-        packagename, classname = splitABCName(self.original_tag.abcName)
+        packagename, classname = splitABCName(original_tag.abcName)
         # 没有源代码的类(第三方库)返回原来的tag
         if (packagename not in self.packages
                 or classname not in self.packages[packagename].classes):
-            return self.original_tag
+            return original_tag
 
-        print('Obfuscating Tag', self.original_tag.abcName, '...')
+        print('Obfuscating Tag', original_tag.abcName, '...')
         # 从包名,类名中获取源代码中解析出的信息
         abcclass = self.packages[packagename].classes[classname]
 
         # 开始生成新的 DoABC tag
         new_tag = TagDoABC()
-        new_tag.header = copy.copy(self.original_tag.header)
-        # new_tag.abcName = self.original_tag.abcName
+        new_tag.header = copy.copy(original_tag.header)
+        # new_tag.abcName = original_tag.abcName
         new_tag.abcName = ''  # 替换debug信息中的abcName
-        new_tag.lazyInitializeFlag = self.original_tag.lazyInitializeFlag
+        new_tag.lazyInitializeFlag = original_tag.lazyInitializeFlag
         # 替换abcfile的bytes
         abcfile = ABCFile()
-        abcfile.parse(SWFStream(BytesIO(self.original_tag.bytes)))
+        abcfile.parse(SWFStream(BytesIO(original_tag.bytes)))
         replacer = ABCFileReplacer(
             abcfile, abcclass, packagename, classname,
             self.names_map, self.packages
@@ -303,6 +303,7 @@ class ABCFileReplacer(object):
         self._replace_instances(self.packagename, self.classname)
         self._replace_classes(self.packagename, self.classname)
 
+        # noinspection PyProtectedMember
         pprint.pprint(list(enumerate(zip(
             self.new_abcfile.const_pool._strings, self.abcfile.const_pool._strings
         ))))
@@ -315,7 +316,7 @@ class ABCFileReplacer(object):
         self._replace_method_body()
         return self.new_abcfile
 
-    """ private methods for replace strings in abcFile's constant pool """
+    """ private methods for access protected member in abcFile's constant pool """
 
     # noinspection PyProtectedMember
     def _get_original_string(self, index):
@@ -334,8 +335,17 @@ class ABCFileReplacer(object):
         str_index = self.new_abcfile.const_pool._namespaces[index][1]
         self._set_new_string(str_index, namespace)
 
+    # noinspection PyProtectedMember
+    def _get_original_multiname_all(self):
+        return self.abcfile.const_pool._multinames
+
+    def _get_original_multiname(self, index):
+        return self._get_original_multiname_all()[index]
+
+    """ private methods for replace strings in abcFile's constant pool """
+
     def _replace_multiname(self, packagename, classname):
-        for index, multiname in enumerate(self.abcfile.const_pool._multinames):
+        for index, multiname in enumerate(self._get_original_multiname_all()):
             if index == 0:
                 continue
             print(self.abcfile.const_pool.get_multiname_string(index))
@@ -362,7 +372,7 @@ class ABCFileReplacer(object):
                     print('Replace by {0}({1})'.format(new_classname, multiname.name))
             elif info['namespace'] in self.names_map['module']:
                 if (info['namespace'] not in self.packages
-                    or info['name'] not in self.packages[info['namespace']].classes):
+                        or info['name'] not in self.packages[info['namespace']].classes):
                     continue
                 # 其他文件中定义的类
                 other_class = self.packages[info['namespace']].classes[info['name']]
@@ -377,6 +387,7 @@ class ABCFileReplacer(object):
                     new_namespace, self.abcfile.const_pool.namespaces[multiname.ns]
                 ))
 
+    # noinspection PyUnusedLocal
     def _replace_instances(self, packagename, classname):
         for instance in self.abcfile.instances:
             for trait in instance.traits:
@@ -386,7 +397,7 @@ class ABCFileReplacer(object):
                     # TODO 常量等其他 strait
                     pass
 
-    # noinspection PyProtectedMember
+    # noinspection PyProtectedMember,PyUnusedLocal
     def _replace_classes(self, packagename, classname):
         # 类静态成员的slot
         for class_ in self.abcfile.classes:
@@ -426,7 +437,7 @@ class ABCFileReplacer(object):
             methodname_index,
             self.combine_class_method_info(new_info)
         )
-        directname_index = self.abcfile.const_pool._multinames[trait.name].name
+        directname_index = self._get_original_multiname(trait.name).name
         self._set_new_string(
             directname_index,
             new_info['methodname']
@@ -476,10 +487,13 @@ class ABCFileReplacer(object):
                 u'Method name:',
                 self._get_original_string(method_name_index)
             )
-            replacer = InstructionReplacer(self.names_map, self.packages)
+            replacer = InstructionReplacer(
+                self.names_map, self.packages,
+                self.abcfile.const_pool
+            )
             new_code_bytes = replacer.replace(
-                self.new_abcfile.const_pool, method_body.code,
-                self.abcfile.const_pool,
+                method_body.code,
+                self.new_abcfile.const_pool,
                 is_replace_public_constant=self.is_replace_public_constant
             )
             print(method_body.code.encode('hex'))
@@ -489,19 +503,21 @@ class ABCFileReplacer(object):
 
 class InstructionReplacer(object):
 
-    def __init__(self, names_map, packages):
+    def __init__(self, names_map, packages, const_pool):
         self.names_map = names_map
         self.packages = packages
+        self.const_pool = const_pool
 
     # noinspection PyProtectedMember
-    def replace(self, new_const_pool, code_bytes, const_pool,
+    def replace(self, code_bytes,
+                new_const_pool,
                 is_remove_local_name=True,
                 is_replace_public_constant=False):
         new_code_bytes = ''
         print('Replacing Debug messages...')
         for instruct in Instruction.iter_instructions(code_bytes):
             print(
-                instruct.resolve(const_pool),
+                instruct.resolve(self.const_pool),
                 '({0})'.format(repr(instruct.code.encode('hex')))
             )
             if (is_remove_local_name
@@ -525,28 +541,30 @@ class InstructionReplacer(object):
                 if instruct.FORM == InstructionFindpropstrict.FORM:
                     next1_instruct = instructions[index + 1]
                     next2_instruct = instructions[index + 2]
-                    if (next1_instruct.FORM == InstructionGetproperty.FORM
-                        and next2_instruct.FORM == InstructionGetproperty.FORM):
-                        print(
-                            instruct.resolve(const_pool),
-                            '({0})'.format(repr(instruct.code.encode('hex')))
-                        )
-                        if (const_pool._multinames[instruct.index].kind
+                    # 符合 Findpropstrict -> Getproperty -> Getproperty 模式
+                    if not (next1_instruct.FORM == InstructionGetproperty.FORM
+                            and next2_instruct.FORM == InstructionGetproperty.FORM):
+                        continue
+                    print(
+                        instruct.resolve(self.const_pool),
+                        '({0})'.format(repr(instruct.code.encode('hex')))
+                    )
+                    if (self.const_pool._multinames[instruct.index].kind
                             not in (StMultiname.QName, StMultiname.QNameA)):
-                            continue
-                        info = const_pool.get_multiname(instruct.index)
-                        if (info['namespace'] not in self.packages
+                        continue
+                    info = self.const_pool.get_multiname(instruct.index)
+                    if (info['namespace'] not in self.packages
                             or info['name'] not in self.packages[info['namespace']].classes):
-                            print('This Constant is not replaceable.')
-                            continue
-                        cls = self.packages[info['namespace']].classes[info['name']]
-                        print(
-                            next2_instruct.resolve(const_pool),
-                            '({0})'.format(repr(instruct.code.encode('hex')))
-                        )
-                        info = const_pool.get_multiname(next2_instruct.index)
-                        const = cls.fuzzy.variables[info['name']]
-                        const_name_index = const_pool._multinames[next2_instruct.index].name
-                        # 替换为混淆后的常量名
-                        new_const_pool._strings[const_name_index] = const.name
+                        print('This Constant is not replaceable.')
+                        continue
+                    cls = self.packages[info['namespace']].classes[info['name']]
+                    print(
+                        next2_instruct.resolve(self.const_pool),
+                        '({0})'.format(repr(instruct.code.encode('hex')))
+                    )
+                    info = self.const_pool.get_multiname(next2_instruct.index)
+                    const = cls.fuzzy.variables[info['name']]
+                    const_name_index = self.const_pool._multinames[next2_instruct.index].name
+                    # 替换为混淆后的常量名
+                    new_const_pool._strings[const_name_index] = const.name
         return new_code_bytes

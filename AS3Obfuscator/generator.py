@@ -35,7 +35,6 @@ class FuzzyClassGenerator(object):
         ]
         fuzzy.name = os.path.split(fuzzy.full_name)[-1]
         
-        
         # 方法名进行混淆
         used_fuzzy_method_names = set([])
         for method in fuzzy.methods.values():
