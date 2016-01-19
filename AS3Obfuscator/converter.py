@@ -288,19 +288,41 @@ class ABCFileConverter(object):
         return out_stream.getvalue()
 
 
+class TagHeaderConverter(object):
+
+    @staticmethod
+    def to_bytes(tag_type, header):
+        out_stream = ABCFileOutputStream()
+        if header.content_length < 0x3f:
+            out_stream.writeUI16(
+                (tag_type << 6) | header.content_length
+            )
+        else:
+            out_stream.writeUI16((tag_type << 6) | 0x3f)
+            out_stream.writeUI32(header.content_length)
+        return out_stream.getvalue()
+
+
 class TagDoABCConverter(object):
 
     @staticmethod
     def to_bytes(tag):
         out_stream = ABCFileOutputStream()
-        if tag.header.content_length < 0x3f:
-            out_stream.writeUI16(
-                (tag.type << 6) | tag.header.content_length
-            )
-        else:
-            out_stream.writeUI16((tag.type << 6) | 0x3f)
-            out_stream.writeUI32(tag.header.content_length)
+        out_stream.write(TagHeaderConverter.to_bytes(tag.type, tag.header))
         out_stream.writeSI32(tag.lazyInitializeFlag)
         out_stream.write(tag.abcName + '\x00')
         out_stream.write(tag.bytes)
+        return out_stream.getvalue()
+
+
+class TagSymbolConverter(object):
+
+    @staticmethod
+    def to_bytes(tag):
+        out_stream = ABCFileOutputStream()
+        out_stream.write(TagHeaderConverter.to_bytes(tag.type, tag.header))
+        out_stream.writeUI16(len(tag.symbols))
+        for symbol in tag.symbols:
+            out_stream.writeUI16(symbol.tagId)
+            out_stream.write(symbol.name + '\x00')
         return out_stream.getvalue()

@@ -15,10 +15,8 @@ import asdox.asBuilder
 
 from utils import filepath2module, module2filepath
 from replacer import SWFFileReplacer
-from generator import FuzzyClassGenerator
-
-
 FUCKUP_PUNCTUATIONS = '{|}!#$%()*+;='
+from generator import FuzzyClassGenerator
 
 
 class AS3Obfuscator(object):

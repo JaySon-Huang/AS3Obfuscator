@@ -31,7 +31,8 @@ from utils import (
     filepath2module, module2filepath,
     splitABCName, joinPackageClassName,
 )
-from stream import ABCFileOutputStream
+
+from converter import TagDoABCConverter, TagSymbolConverter
 range = xrange
 
 '''
@@ -189,36 +190,18 @@ class SWFFileReplacer(object):
                 print('0x{0:04x}({1:5d}) Tag:{2}'.format(
                     tag.file_offset, tag.header.tag_length, tag.name
                 ))
-                # TODO 把tag转换为bytes提炼为一个类的功能
-                if tag.name == 'DoABC':
+                # tag替换内容提炼为Replacer系列类的功能
+                # tag转换为bytes提炼为Converter系列类的功能
+                if tag.type == TagDoABC.TYPE:
                     new_tag = TagDoABCReplacer(self.packages, self.names_map, tag).replace()
                     if new_tag is not tag:
                         print('modified TagDoABC: {0}'.format(tag.abcName))
                     else:
                         print('not modified TagDoABC: {0}'.format(tag.abcName))
-                    out_stream = ABCFileOutputStream()
-                    # FIXME 默认 TagDoABC 长度都大于63
-                    out_stream.writeUI16((new_tag.type << 6) | 0x3f)
-                    out_stream.writeSI32(new_tag.header.content_length)
-                    out_stream.writeSI32(new_tag.lazyInitializeFlag)
-                    out_stream.write(new_tag.abcName + '\x00')
-                    out_stream.write(new_tag.bytes)
-                    outfile.write(out_stream.getvalue())
-                elif tag.name == 'SymbolClass':
-                    new_tag = self._replaceTagSymbolClass(tag)
-                    out_stream = ABCFileOutputStream()
-                    if new_tag.header.content_length < 0x3f:
-                        out_stream.writeUI16(
-                            (new_tag.type<<6) | new_tag.header.content_length
-                        )
-                    else:
-                        out_stream.writeUI16((new_tag.type<<6) | 0x3f)
-                        out_stream.writeUI32(new_tag.header.content_length)
-                    out_stream.writeUI16(len(new_tag.symbols))
-                    for symbol in new_tag.symbols:
-                        out_stream.writeUI16(symbol.tagId)
-                        out_stream.write(symbol.name + '\x00')
-                    outfile.write(out_stream.getvalue())
+                    outfile.write(TagDoABCConverter.to_bytes(new_tag))
+                elif tag.type == TagSymbolClass.TYPE:
+                    new_tag = TagSymbolReplacer(self.packages, self.names_map, tag).replace()
+                    outfile.write(TagSymbolConverter.to_bytes(new_tag))
                 else:
                     # 其他tag保持原有bytes
                     outfile.write(original_bytes[
@@ -229,10 +212,17 @@ class SWFFileReplacer(object):
             outfile.seek(3 + 1)
             outfile.write(struct.pack('<I', file_length))
 
-    def _replaceTagSymbolClass(self, tag):
+
+class TagSymbolReplacer(object):
+    def __init__(self, packages, names_map, original_tag):
+        self.packages = packages
+        self.names_map = names_map
+        self.original_tag = original_tag
+
+    def replace(self):
         new_tag = TagSymbolClass()
         symbols_length = 0
-        for symbol in tag.symbols:
+        for symbol in self.original_tag.symbols:
             new_symbol = copy.copy(symbol)
             if symbol.name in self.names_map['class']:
                 new_symbol.name = self.names_map['class'][symbol.name]
@@ -240,7 +230,7 @@ class SWFFileReplacer(object):
             # 2 for id, others for c-string size
             symbols_length += 2 + len(new_symbol.name) + 1
         # 2 for num of symbols, others for symbols' size
-        new_tag.header = copy.copy(tag.header)
+        new_tag.header = copy.copy(self.original_tag.header)
         new_tag.header.content_length = 2 + symbols_length
         return new_tag
 
@@ -271,7 +261,8 @@ class TagDoABCReplacer(object):
         # 开始生成新的 DoABC tag
         new_tag = TagDoABC()
         new_tag.header = copy.copy(self.original_tag.header)
-        new_tag.abcName = '' #self.original_tag.abcName  # FIXME 替换abcName
+        # new_tag.abcName = self.original_tag.abcName
+        new_tag.abcName = ''  # 替换debug信息中的abcName
         new_tag.lazyInitializeFlag = self.original_tag.lazyInitializeFlag
         # 替换abcfile的bytes
         abcfile = ABCFile()
