@@ -140,6 +140,11 @@ class FuzzyClassnameGenerator(object):
 
 class FuzzyClassGenerator(object):
 
+    FUZZY_LENGTH = {
+        'method': 3,
+        'variable': 5,
+    }
+
     NAME_SET = {
         'method': (
             string.ascii_letters
@@ -165,25 +170,20 @@ class FuzzyClassGenerator(object):
             # 覆盖函数不再重命名
             if method.isOverride:
                 # print('override function ', method.name)
+                used_fuzzy_method_names.add(method.name)
                 continue
+            # 构造函数, 重命名为跟混淆后的类名一致
             if method.name == original_cls.name:
-                # 构造函数
                 method.name = fuzzy.name
-            elif method.visibility == 'private':
+                used_fuzzy_method_names.add(method.name)
+                continue
+            if method.visibility == 'private':
                 # 私有函数
-                while True:
-                    name = ''.join([
-                        random.choice(cls.NAME_SET['method'])
-                        for _ in range(3)
-                    ])
-                    if name not in used_fuzzy_method_names:
-                        used_fuzzy_method_names.add(name)
-                        break
+                name = cls._generate_fuzzy_method_name(used_fuzzy_method_names)
                 print(u'private method {0} -> {1}'.format(method.name, name))
                 method.name = name
             # TODO 公有函数
-            # 参数名进行混淆(SUPPRESS, 在swf文件结构中消除相关信息)
-        
+
         '''
         # getter/setter # FIXME: 默认getter/setter成对出现
         for method_name, method in fuzzy.getter_methods.items():
@@ -204,24 +204,32 @@ class FuzzyClassGenerator(object):
         used_fuzzy_variable_names = set([])
         for var in fuzzy.variables.values():
             if var.visibility == 'private':
-                while True:
-                    name = ''.join([
-                        random.choice(cls.NAME_SET['variable'])
-                        for _ in range(5)
-                    ])
-                    if name not in used_fuzzy_variable_names:
-                        used_fuzzy_variable_names.add(name)
-                        break
-                var.name = name
+                # 私有变量
+                var.name = cls._generate_fuzzy_var_name(used_fuzzy_variable_names)
             elif var.isConstant and var.isStatic:
-                while True:
-                    name = ''.join([
-                        random.choice(cls.NAME_SET['variable'])
-                        for _ in range(5)
-                    ])
-                    if name not in used_fuzzy_variable_names:
-                        used_fuzzy_variable_names.add(name)
-                        break
-                var.name = name
+                # 公有静态常量
+                var.name = cls._generate_fuzzy_var_name(used_fuzzy_variable_names)
             # TODO 公有成员变量/常量
         return fuzzy
+
+    @staticmethod
+    def _generate_fuzzy_method_name(used_fuzzy_method_names):
+        while True:
+            name = ''.join([
+                random.choice(FuzzyClassGenerator.NAME_SET['method'])
+                for _ in range(FuzzyClassGenerator.FUZZY_LENGTH['method'])
+            ])
+            if name not in used_fuzzy_method_names:
+                used_fuzzy_method_names.add(name)
+                return name
+
+    @staticmethod
+    def _generate_fuzzy_var_name(used_fuzzy_variable_names):
+        while True:
+            name = ''.join([
+                random.choice(FuzzyClassGenerator.NAME_SET['variable'])
+                for _ in range(FuzzyClassGenerator.FUZZY_LENGTH['variable'])
+            ])
+            if name not in used_fuzzy_variable_names:
+                used_fuzzy_variable_names.add(name)
+                return name
