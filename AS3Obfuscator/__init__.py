@@ -19,6 +19,18 @@ from generator import (
 )
 
 
+def get_dummy_watcher_class(class_full_name):
+    watcher_name = '_{0}WatcherSetupUtil'.format(
+        '_'.join(class_full_name.split('.'))
+    )
+    from asdox.asModel import ASClass, ASMethod
+    cls = ASClass(watcher_name)
+    constructor = ASMethod(watcher_name)
+    constructor.visibility = 'public'
+    cls.methods[constructor.name] = constructor
+    return cls
+
+
 class AS3Obfuscator(object):
 
     def __init__(self, src_dir, dst_dir,
@@ -112,9 +124,13 @@ class AS3Obfuscator(object):
                 old_cls_meta['full_path']
             )
             if src_root != self._paths['src']:
-                # TODO 框架生成的 WatcherSetupUtil 类
-                # 生成的 WatcherSetupUtil
-                pass
+                # 框架生成的 WatcherSetupUtil 类, 把其加入swf文件中处理二进制中的包名/类名
+                watcher_class = get_dummy_watcher_class(old_cls_meta['full_name'])
+                self._builder.packages[''].classes[watcher_class.name] = watcher_class
+                self._classname_generator.set_name_map(
+                    watcher_class.full_name,
+                    watcher_class.full_name
+                )
             if is_move_files:
                 shutil.copy2(
                     os.path.join(src_root, filename),
