@@ -326,3 +326,15 @@ class TagSymbolConverter(object):
             out_stream.writeUI16(symbol.tagId)
             out_stream.write(symbol.name + '\x00')
         return out_stream.getvalue()
+
+
+class TagDefineBinaryDataConverter(object):
+
+    @staticmethod
+    def to_bytes(tag):
+        out_stream = ABCFileOutputStream()
+        out_stream.write(TagHeaderConverter.to_bytes(tag.type, tag.header))
+        out_stream.writeUI16(tag.characterId)
+        out_stream.writeUI32(tag.reserved)
+        out_stream.write(tag.data)
+        return out_stream.getvalue()

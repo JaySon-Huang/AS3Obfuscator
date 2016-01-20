@@ -6,12 +6,15 @@ from __future__ import print_function
 import copy
 import struct
 import pprint
-from six import BytesIO
 from collections import defaultdict
+
+from six import BytesIO
+import lxml
+from lxml import etree
 
 from swf.movie import SWF
 from swf.stream import SWFStream
-from swf.tag import (TagDoABC, TagSymbolClass)
+from swf.tag import (TagDoABC, TagSymbolClass, TagDefineBinaryData)
 from swf.abcfile import ABCFile, StMethodInfo, StMultiname, CONSTANT_KIND_NAME
 from swf.abcfile.trait import (
     StTraitClass,
@@ -32,7 +35,12 @@ from utils import (
     splitABCName, joinPackageClassName,
 )
 
-from converter import TagDoABCConverter, TagSymbolConverter
+from converter import (
+    TagDoABCConverter,
+    TagSymbolConverter,
+    TagDefineBinaryDataConverter,
+)
+
 range = xrange
 
 '''
@@ -175,12 +183,20 @@ class SWFFileReplacer(object):
             self.names_map['class'][filepath2module(key)] = filepath2module(
                 names_map['class'][key]
             )
+        self.symbols = {}
+
+    def _load_symbols_id(self, swf):
+        for tag in swf.tags:
+            if tag.type == TagSymbolClass.TYPE:
+                for symbol in tag.symbols:
+                    self.symbols[symbol.tagId] = symbol.name
 
     def replace(self, swf_filename, out_filename):
         with open(swf_filename, 'rb') as infile:
             s = SWF(infile, is_quick_mode=True)
             infile.seek(0)
             original_bytes = infile.read()
+            self._load_symbols_id(s)
         with open(out_filename, 'wb') as outfile:
             outfile.write('FWS')
             outfile.write(struct.pack('B', s.header.version))
@@ -189,9 +205,10 @@ class SWFFileReplacer(object):
                 3 + 1 + 4:s.tags[0].file_offset  # copy 'FWS' + version + length 到 第一个tag之间的内容
             ])
             for tag in s.tags:
-                print('0x{0:04x}({1:5d}) Tag:{2}'.format(
-                    tag.file_offset, tag.header.tag_length, tag.name
-                ))
+                if tag.type in (TagDoABC.TYPE, TagSymbolClass.TYPE, TagDefineBinaryData.TYPE):
+                    print('0x{0:04x}({1:5d}) Tag:{2}'.format(
+                        tag.file_offset, tag.header.tag_length, tag.name
+                    ))
                 # tag替换内容提炼为Replacer系列类的功能
                 # tag转换为bytes提炼为Converter系列类的功能
                 if tag.type == TagDoABC.TYPE:
@@ -204,6 +221,13 @@ class SWFFileReplacer(object):
                 elif tag.type == TagSymbolClass.TYPE:
                     new_tag = TagSymbolReplacer(self.packages, self.names_map).replace(tag)
                     outfile.write(TagSymbolConverter.to_bytes(new_tag))
+                elif tag.type == TagDefineBinaryData.TYPE:
+                    print(tag.name, tag.characterId, self.symbols[tag.characterId])
+                    if self.symbols[tag.characterId] not in self.names_map['class']:
+                        new_tag = tag
+                    else:
+                        new_tag = TagDefineBinaryDataReplacer(self.names_map, self.symbols).replace(tag)
+                    outfile.write(TagDefineBinaryDataConverter.to_bytes(new_tag))
                 else:
                     # 其他tag保持原有bytes
                     outfile.write(original_bytes[
@@ -568,3 +592,86 @@ class InstructionReplacer(object):
                     # 替换为混淆后的常量名
                     new_const_pool._strings[const_name_index] = const.name
         return new_code_bytes
+
+
+class TagDefineBinaryDataReplacer(object):
+    def __init__(self, names_map, symbols):
+        self.names_map = names_map
+        self.symbols = symbols
+
+    def replace(self, original_tag):
+        new_tag = TagDefineBinaryData()
+        new_tag.header = copy.copy(original_tag.header)
+        new_tag.characterId = original_tag.characterId
+        new_tag.reserved = original_tag.reserved
+
+        panels_node = etree.parse(BytesIO(original_tag.data)).getroot()
+        assert panels_node.tag == 'Panels'
+        new_tag.data = self._replace_xml_data(panels_node)
+        # 2 for charaterID, 4 for reserved, other for data
+        new_tag.header.content_length = 2 + 4 + len(new_tag.data)
+        return new_tag
+
+    def _replace_xml_data(self, panels_node):
+        new_panels_node = etree.Element(panels_node.tag)
+        for panel_node in panels_node:
+            if isinstance(panel_node, lxml.etree._Comment):
+                continue
+            assert panel_node.tag == 'Panel'
+            print('{} BeginId {}'.format(
+                panel_node.tag,
+                panel_node.attrib['BeginId'],
+            ))
+            # copy panel 结点的内容
+            new_panel_node = etree.SubElement(new_panels_node, panel_node.tag)
+            new_panel_node.set('BeginId', panel_node.attrib['BeginId'])
+            for shape_node in panel_node:
+                if isinstance(shape_node, lxml.etree._Comment):
+                    continue
+                assert shape_node.tag == 'Shape'
+                print(u'{} ShapeClass {} PropClass {}'.format(
+                    shape_node.tag,
+                    shape_node.attrib['ShapeClass'],
+                    shape_node.attrib['PropClass']
+                ))
+                # copy shape 结点的内容
+                new_shape_node = etree.SubElement(
+                    new_panel_node, shape_node.tag
+                )
+                new_shape_node.set('Id', shape_node.attrib['Id'])
+                new_shape_node.set('Caption', shape_node.attrib['Caption'])
+                shape_class = shape_node.attrib['ShapeClass']
+                if shape_class in self.names_map['class']:
+                    new_shape_node.set(
+                        'ShapeClass',
+                        self.names_map['class'][shape_class]
+                    )
+                    print('Replace ShapeClass {0} by {1}'.format(
+                        shape_class,
+                        self.names_map['class'][shape_class]
+                    ))
+                else:
+                    new_shape_node.set(
+                        'ShapeClass',
+                        shape_node.attrib['ShapeClass']
+                    )
+                prop_class = shape_node.attrib['PropClass']
+                if prop_class in self.names_map['class']:
+                    new_shape_node.set(
+                        'PropClass',
+                        self.names_map['class'][prop_class]
+                    )
+                    print('Replace PropClass {0} by {1}'.format(
+                        prop_class,
+                        self.names_map['class'][prop_class]
+                    ))
+                else:
+                    new_shape_node.set(
+                        'PropClass',
+                        shape_node.attrib['PropClass']
+                    )
+        return etree.tostring(
+            new_panels_node,
+            # pretty_print=True,
+            encoding='utf-8', xml_declaration=True
+        )
