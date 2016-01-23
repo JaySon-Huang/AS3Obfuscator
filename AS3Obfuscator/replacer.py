@@ -205,10 +205,9 @@ class SWFFileReplacer(object):
                 3 + 1 + 4:s.tags[0].file_offset  # copy 'FWS' + version + length 到 第一个tag之间的内容
             ])
             for tag in s.tags:
-                if tag.type in (TagDoABC.TYPE, TagSymbolClass.TYPE, TagDefineBinaryData.TYPE):
-                    print('0x{0:04x}({1:5d}) Tag:{2}'.format(
-                        tag.file_offset, tag.header.tag_length, tag.name
-                    ))
+                print('0x{0:04x}({1:5d}) Tag:{2}'.format(
+                    tag.file_offset, tag.header.tag_length, tag.name
+                ))
                 # tag替换内容提炼为Replacer系列类的功能
                 # tag转换为bytes提炼为Converter系列类的功能
                 if tag.type == TagDoABC.TYPE:
@@ -260,6 +259,21 @@ class TagSymbolReplacer(object):
         return new_tag
 
 
+def is_class_in_packages(packages, packagename, classname):
+    return (packagename in packages
+            and (classname in packages[packagename].classes
+                 or classname in packages[packagename].interfaces))
+
+
+def get_class_from_packages(packages, packagename, classname):
+    if classname in packages[packagename].classes:
+        return packages[packagename].classes[classname]
+    elif classname in packages[packagename].interfaces:
+        return packages[packagename].interfaces[classname]
+    else:
+        raise Exception('PKG:{0} CLASS:{1} not FOUND')
+
+
 class TagDoABCReplacer(object):
     def __init__(self, packages, names_map):
         self.packages = packages
@@ -274,13 +288,12 @@ class TagDoABCReplacer(object):
         # 从ABCName中获取包名,类名
         packagename, classname = splitABCName(original_tag.abcName)
         # 没有源代码的类(第三方库)返回原来的tag
-        if (packagename not in self.packages
-                or classname not in self.packages[packagename].classes):
+        if not is_class_in_packages(self.packages, packagename, classname):
             return original_tag
 
         print('Obfuscating Tag', original_tag.abcName, '...')
         # 从包名,类名中获取源代码中解析出的信息
-        abcclass = self.packages[packagename].classes[classname]
+        abcclass = get_class_from_packages(self.packages, packagename, classname)
 
         # 开始生成新的 DoABC tag
         new_tag = TagDoABC()
@@ -322,7 +335,6 @@ class ABCFileReplacer(object):
         self.is_replace_public_constant = is_replace_public_constant
 
     def replace(self):
-        # 读入原来的 strings
         self._replace_multiname(self.packagename, self.classname)
         self._replace_instances(self.packagename, self.classname)
         self._replace_classes(self.packagename, self.classname)
@@ -355,9 +367,18 @@ class ABCFileReplacer(object):
         self.new_abcfile.const_pool._strings[index] = string
 
     # noinspection PyProtectedMember
+    def _get_original_namespace(self, index):
+        str_index = self.abcfile.const_pool.namespaces[index]
+        return self.abcfile.const_pool._strings[str_index]
+
+    # noinspection PyProtectedMember
     def _set_new_namespace(self, index, namespace):
         str_index = self.new_abcfile.const_pool._namespaces[index][1]
         self._set_new_string(str_index, namespace)
+
+    # noinspection PyProtectedMember
+    def _get_original_namespace_set(self, index):
+        return self.abcfile.const_pool._ns_sets[index]
 
     # noinspection PyProtectedMember
     def _get_original_multiname_all(self):
@@ -395,11 +416,13 @@ class ABCFileReplacer(object):
                     self._set_new_string(multiname.name, new_classname)
                     print('Replace by {0}({1})'.format(new_classname, multiname.name))
             elif info['namespace'] in self.names_map['module']:
-                if (info['namespace'] not in self.packages
-                        or info['name'] not in self.packages[info['namespace']].classes):
+                if not is_class_in_packages(self.packages, info['namespace'], info['name']):
                     continue
                 # 其他文件中定义的类
-                other_class = self.packages[info['namespace']].classes[info['name']]
+                other_class = get_class_from_packages(
+                    self.packages,
+                    info['namespace'], info['name']
+                )
                 # 替换为混淆后的类名
                 new_classname = other_class.fuzzy.name
                 self._set_new_string(multiname.name, new_classname)
@@ -414,12 +437,40 @@ class ABCFileReplacer(object):
     # noinspection PyUnusedLocal
     def _replace_instances(self, packagename, classname):
         for instance in self.abcfile.instances:
+            # 替换实现的 interface
+            if len(instance.interfaces) != 0:
+                print('Implemented interfaces:')
+                for interface in instance.interfaces:
+                    multiname = self._get_original_multiname(interface)
+                    assert multiname.kind == StMultiname.Multiname
+                    ns_set = self._get_original_namespace_set(multiname.ns_set)
+                    assert len(ns_set) == 1
+                    print(self.abcfile.const_pool.get_multiname_string(interface))
+                    pkg_name = self._get_original_namespace(ns_set[0])
+                    interface_name = self._get_original_string(multiname.name)
+                    if not is_class_in_packages(self.packages, pkg_name, interface_name):
+                        continue
+                    new_pkg_name, new_interface_name = \
+                        self._get_new_interface(pkg_name, interface_name)
+                    self._set_new_namespace(ns_set[0], new_pkg_name)
+                    self._set_new_string(multiname.name, new_interface_name)
+                    print('Interface Replace by {0}.{1}'.format(
+                        new_pkg_name,
+                        new_interface_name
+                    ))
+            # 替换方法名
             for trait in instance.traits:
                 if isinstance(trait, StTraitMethod):
                     self._replace_method_trait(trait, packagename)
                 else:
                     # TODO 常量等其他 strait
                     pass
+
+    def _get_new_interface(self, package_name, interface_name):
+        parts = self.names_map['class']['.'.join([package_name, interface_name])].split('.')
+        new_package_name = '.'.join(parts[:-1])
+        new_interface_name = parts[-1]
+        return new_package_name, new_interface_name
 
     # noinspection PyProtectedMember,PyUnusedLocal
     def _replace_classes(self, packagename, classname):
@@ -518,6 +569,7 @@ class ABCFileReplacer(object):
             new_code_bytes = replacer.replace(
                 method_body.code,
                 self.new_abcfile.const_pool,
+                is_remove_local_name=True,
                 is_replace_public_constant=self.is_replace_public_constant
             )
             print(method_body.code.encode('hex'))
@@ -605,14 +657,33 @@ class TagDefineBinaryDataReplacer(object):
         new_tag.characterId = original_tag.characterId
         new_tag.reserved = original_tag.reserved
 
-        panels_node = etree.parse(BytesIO(original_tag.data)).getroot()
-        assert panels_node.tag == 'Panels'
-        new_tag.data = self._replace_xml_data(panels_node)
+        tree = etree.parse(BytesIO(original_tag.data))
+        panels_node = tree.getroot()
+        if panels_node.tag == 'Panels' and 'TYPE' in panels_node.attrib:
+            type_ = panels_node.attrib['TYPE']
+            if type_ == 'Bio':
+                new_tag.data = self._replace_xml_data_bio(panels_node)
+            elif type_ == 'Chem':
+                # from IPython import embed;embed()
+                # new_tag.data = self._replace_xml_data_chem(panels_node)
+                new_tag.data = original_tag.data
+        else:
+            new_tag.data = original_tag.data
         # 2 for charaterID, 4 for reserved, other for data
         new_tag.header.content_length = 2 + 4 + len(new_tag.data)
         return new_tag
 
-    def _replace_xml_data(self, panels_node):
+    def _replace_xml_data_chem(self, panels_node):
+        assert panels_node.tag == 'Panels'
+        new_panels_node = etree.Element(panels_node.tag)
+        return etree.tostring(
+            new_panels_node,
+            # pretty_print=True,
+            encoding='utf-8', xml_declaration=True
+        )
+
+    def _replace_xml_data_bio(self, panels_node):
+        assert panels_node.tag == 'Panels'
         new_panels_node = etree.Element(panels_node.tag)
         for panel_node in panels_node:
             if isinstance(panel_node, lxml.etree._Comment):

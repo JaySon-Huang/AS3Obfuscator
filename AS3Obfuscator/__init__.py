@@ -93,7 +93,9 @@ class AS3Obfuscator(object):
         """
         对文件进行处理
         """
-        if filename in self._ignore_classes:
+        old_cls_meta = self._classname_generator.collect_old_meta(src_root, filename)
+        if old_cls_meta['full_name'] in self._ignore_classes:
+            print('ignore class:', os.path.join(src_root, filename))
             # 忽略的类, 直接复制到目标文件夹下
             if is_move_files:
                 shutil.copy2(
@@ -101,7 +103,6 @@ class AS3Obfuscator(object):
                     dst_root
                 )
             return
-        old_cls_meta = self._classname_generator.collect_old_meta(src_root, filename)
         if old_cls_meta['ext'].lower() not in ('.as', '.mxml'):
             # 非 .as .mxml, 直接复制文件到目标文件夹下
             if is_move_files:
@@ -126,11 +127,13 @@ class AS3Obfuscator(object):
             if src_root != self._paths['src']:
                 # 框架生成的 WatcherSetupUtil 类, 把其加入swf文件中处理二进制中的包名/类名
                 watcher_class = get_dummy_watcher_class(old_cls_meta['full_name'])
-                self._builder.packages[''].classes[watcher_class.name] = watcher_class
-                self._classname_generator.set_name_map(
-                    watcher_class.full_name,
-                    watcher_class.full_name
-                )
+                print('Generate Class', watcher_class.full_name)
+                if watcher_class.full_name not in self._classname_generator.names_map:
+                    self._builder.packages[''].classes[watcher_class.name] = watcher_class
+                    self._classname_generator.set_name_map(
+                        watcher_class.full_name,
+                        watcher_class.full_name
+                    )
             if is_move_files:
                 shutil.copy2(
                     os.path.join(src_root, filename),
@@ -185,9 +188,14 @@ class AS3Obfuscator(object):
             print(json.dumps(self._names_map, indent=4), file=outfile)
         print('generating new infos ...')
         for pkg in self._packages.values():
-            for i, cls in enumerate(pkg.classes.values()):
+            for cls in pkg.classes.values():
                 cls.fuzzy = FuzzyClassGenerator.generate(
                     pkg.name, cls,
+                    self._names_map['class']
+                )
+            for interface in pkg.interfaces.values():
+                interface.fuzzy = FuzzyClassGenerator.generate(
+                    pkg.name, interface,
                     self._names_map['class']
                 )
 

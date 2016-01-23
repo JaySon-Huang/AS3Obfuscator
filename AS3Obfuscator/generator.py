@@ -7,7 +7,7 @@ import os
 import os.path
 import copy
 import random
-random.seed('0362')
+random.seed('03620362')
 import string
 
 from utils import filepath2module, module2filepath
@@ -158,12 +158,20 @@ class FuzzyClassGenerator(object):
 
     @classmethod
     def generate(cls, modulepath, original_cls, cls_names_map):
+        print('Generate fuzzy information of {0}({1})'.format(
+            original_cls.name,
+            original_cls.full_name,
+        ), end='')
         fuzzy = copy.deepcopy(original_cls)
-        fuzzy.full_name = cls_names_map[
+        fuzzy.full_name = filepath2module(cls_names_map[
             module2filepath(original_cls.full_name)
-        ]
-        fuzzy.name = os.path.split(fuzzy.full_name)[-1]
-        
+        ])
+        fuzzy.name = fuzzy.full_name.split('.')[-1]
+        print(' -> {0}({1})'.format(fuzzy.name, fuzzy.full_name))
+
+        if original_cls.isInterface:
+            return fuzzy
+
         # 方法名进行混淆
         used_fuzzy_method_names = set([])
         for method in fuzzy.methods.values():
