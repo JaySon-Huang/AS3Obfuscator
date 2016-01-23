@@ -106,16 +106,41 @@ builder = asdox.asBuilder.Builder()
 # obfuscator.run('./samples/as_test/out/production/as_test/Main.decompressed.swf')
 
 
+# from AS3Obfuscator import AS3Obfuscator
+# obfuscator = AS3Obfuscator(
+#     './samples/Bio/src',
+#     './samples/Bio/obfuscated',
+#     ignore_paths=[],  # ['res', 'Teach/Item/Biology/Shape'],
+#     ignore_classes=[],
+#     keep_classname_classes=['TeachConfig.as', ]
+# )
+# obfuscator.run('./samples/Bio/out/production/Bio/Teach.decompressed.swf')
+# # obfuscator.debug('./samples/Bio/out/production/Bio/Teach.decompressed.swf')
+
 from AS3Obfuscator import AS3Obfuscator
 obfuscator = AS3Obfuscator(
-    './samples/Bio/src',
-    './samples/Bio/obfuscated',
-    ignore_paths=['asds', 'res', 'Teach/UI/ToolBar/Menu/icon'],
+    './samples/Chem/src',
+    './samples/Chem/obfuscated',
+    ignore_paths=['res', ],
+    # ignore_classes=['Teach.Item.Chemic.ChemSimulationLab.ChemLib.IChemicalMeasure', ],
     ignore_classes=[],
     keep_classname_classes=['TeachConfig.as', ]
 )
-# obfuscator.run('./samples/Bio/out/production/Bio/Teach.decompressed.swf')
-obfuscator.debug('./samples/Bio/out/production/Bio/Teach.decompressed.swf')
+obfuscator.run('./samples/Chem/out/production/Chem/Teach.decompressed.swf')
+# obfuscator.debug('./samples/Chem/out/production/Chem/Teach.decompressed.swf')
 
+
+# builder.addMXMLSource('./samples/MesWnd.mxml', '')
+
+# from AS3Obfuscator import AS3Obfuscator
+# obfuscator = AS3Obfuscator(
+#     './samples/Math/src',
+#     './samples/Math/obfuscated',
+#     ignore_paths=[],
+#     ignore_classes=[],
+#     keep_classname_classes=['TeachConfig.as', ]
+# )
+# # obfuscator.run('./samples/Math/out/production/Math/Teach.decompressed.swf')
+# obfuscator.debug('./samples/Math/out/production/Math/Teach.decompressed.swf')
 
 # from IPython import embed;embed();

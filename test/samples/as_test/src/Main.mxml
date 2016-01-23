@@ -6,7 +6,8 @@
         import mx.controls.Alert;
 
         private var st:StringTest = new StringTest();
+        private var nt:NumTest = new NumTest();
         ]]></fx:Script>
-    <s:Button click="Alert.show('Hello, world')" label="Say Hello"/>
+    <!--<s:Button click="Alert.show('Hello, world'+nt.getNum())" label="Say Hello"/>-->
     <s:Button click="Alert.show(st.getName())" label="WTF"/>
 </s:WindowedApplication>
