@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" xmlns:s="library://ns.adobe.com/flex/spark">
+    <fx:Script><![CDATA[
+        import com.jayson.StringTest;
+
+        import mx.controls.Alert;
+
+        private var st:StringTest = new StringTest();
+        private var nt:NumTest = new NumTest();
+        ]]></fx:Script>
+    <!--<s:Button click="Alert.show('Hello, world'+nt.getNum())" label="Say Hello"/>-->
+    <s:Button click="Alert.show(st.getName())" label="WTF"/>
+</s:WindowedApplication>
