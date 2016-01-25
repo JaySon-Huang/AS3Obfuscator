@@ -44,6 +44,7 @@ class AS3Obfuscator(object):
         self._names_map = {
             'module': {},
             'class': {},
+            'method': {},
         }
         self._module_generator = FuzzyModulenameGenerator(self._paths)
         self._classname_generator = FuzzyClassnameGenerator(self._paths)
@@ -59,7 +60,7 @@ class AS3Obfuscator(object):
             keep_classname_classes if keep_classname_classes is not None else []
         )
 
-    def _reproduce_dir(self, src_root, dst_root, is_move_files=False):
+    def _reproduce_module(self, src_root, dst_root, is_move_files=False):
         """
         递归地处理目录
         """
@@ -87,7 +88,7 @@ class AS3Obfuscator(object):
                     if is_move_files:
                         os.makedirs(new_path)
                     # 递归处理子目录
-                    self._reproduce_dir(old_path, new_path)
+                    self._reproduce_module(old_path, new_path)
 
     def _reproduce_file(self, src_root, dst_root, filename, is_move_files):
         """
@@ -143,7 +144,9 @@ class AS3Obfuscator(object):
         else:
             # as 文件
             self._builder.addSource(os.path.join(src_root, filename))
-            if filename in self._keep_classname_classes:
+            if (filename in self._keep_classname_classes
+                or (old_cls_meta['full_name'].startswith('_')
+                    and old_cls_meta['full_name'].endswith('WatcherSetupUtil'))):
                 # 保持类名不变
                 self._classname_generator.set_name_map(
                     old_cls_meta['full_path'],
@@ -176,32 +179,37 @@ class AS3Obfuscator(object):
                 shutil.rmtree(self._paths['dst'])
             os.makedirs(self._paths['dst'])
         # 收集混淆包名, 类名
-        self._reproduce_dir(self._paths['src'], self._paths['dst'])
+        self._reproduce_module(self._paths['src'], self._paths['dst'])
         self._names_map['module'] = self._module_generator.names_map
         self._names_map['module'][''] = ''
         self._names_map['class'] = self._classname_generator.names_map
-        #
+        # 收集源代码信息
         self._packages = self._builder.packages
         del self._builder
-        print(json.dumps(self._names_map, indent=4))
-        with open('names_map.json', 'w') as outfile:
-            print(json.dumps(self._names_map, indent=4), file=outfile)
+
         print('generating new infos ...')
         for pkg in self._packages.values():
             for cls in pkg.classes.values():
-                cls.fuzzy = FuzzyClassGenerator.generate(
+                cls.fuzzy, method_names_map = FuzzyClassGenerator.generate(
                     pkg.name, cls,
                     self._names_map['class']
                 )
+                self._names_map['method'][cls.full_name] = method_names_map
             for interface in pkg.interfaces.values():
-                interface.fuzzy = FuzzyClassGenerator.generate(
+                interface.fuzzy, method_names_map = FuzzyClassGenerator.generate(
                     pkg.name, interface,
                     self._names_map['class']
                 )
+                self._names_map['method'][interface.full_name] = method_names_map
 
-        pydata_filename = os.path.split(swf_filename)[1].split('.')[0]
+        # 记录映射关系
+        print(json.dumps(self._names_map, indent=4))
+        with open('names_map.json', 'w') as outfile:
+            print(json.dumps(self._names_map, indent=4), file=outfile)
+
+        pydata_filename = swf_filename.split(os.sep)[2]
         dump_filename = 'self.' + pydata_filename + '.pydata'
-        import pickle
+        import cPickle as pickle
         with open(dump_filename, 'w') as outfile:
             pickle.dump(self, outfile)
             print('dumped `self` to `{0}`....'.format(dump_filename))
@@ -215,12 +223,13 @@ class AS3Obfuscator(object):
         return None
 
     def debug(self, swf_filename):
-        pydata_filename = os.path.split(swf_filename)[1].split('.')[0]
+        pydata_filename = swf_filename.split(os.sep)[2]
+        dump_filename = 'self.' + pydata_filename + '.pydata'
         print('>>debug<< restore self from {0}'.format(
             'self.' + pydata_filename + '.pydata'
         ))
-        import pickle
-        with open('self.Teach.pydata', 'r') as infile:
+        import cPickle as pickle
+        with open(dump_filename, 'r') as infile:
             self = pickle.load(infile)
 
         print('Analysing swf file:{0} ...'.format(swf_filename))

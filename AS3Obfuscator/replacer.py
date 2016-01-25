@@ -174,6 +174,7 @@ class SWFFileReplacer(object):
         self.names_map = {
             'module': {},
             'class': {},
+            'method': names_map['method'],
         }
         for key in names_map['module']:
             self.names_map['module'][filepath2module(key)] = filepath2module(
@@ -569,7 +570,7 @@ class ABCFileReplacer(object):
             new_code_bytes = replacer.replace(
                 method_body.code,
                 self.new_abcfile.const_pool,
-                is_remove_local_name=True,
+                is_remove_local_name=False,
                 is_replace_public_constant=self.is_replace_public_constant
             )
             print(method_body.code.encode('hex'))
@@ -664,9 +665,7 @@ class TagDefineBinaryDataReplacer(object):
             if type_ == 'Bio':
                 new_tag.data = self._replace_xml_data_bio(panels_node)
             elif type_ == 'Chem':
-                # from IPython import embed;embed()
-                # new_tag.data = self._replace_xml_data_chem(panels_node)
-                new_tag.data = original_tag.data
+                new_tag.data = self._replace_xml_data_chem(panels_node)
         else:
             new_tag.data = original_tag.data
         # 2 for charaterID, 4 for reserved, other for data
@@ -675,7 +674,23 @@ class TagDefineBinaryDataReplacer(object):
 
     def _replace_xml_data_chem(self, panels_node):
         assert panels_node.tag == 'Panels'
+        classname = panels_node.attrib['BELONG']
+        method_names_map = self.names_map['method'][classname]
         new_panels_node = etree.Element(panels_node.tag)
+        for panel_node in panels_node.xpath('Panel'):
+            new_panel_node = etree.SubElement(
+                new_panels_node,
+                panel_node.tag, panel_node.attrib
+            )
+            for shape_node in panel_node.xpath('Shape'):
+                new_shape_node = etree.SubElement(new_panel_node, shape_node.tag)
+                for key, val in shape_node.attrib.items():
+                    if key == 'InitMethodName' and val != '':
+                        # 替换为混淆后的初始化函数名
+                        new_val = method_names_map[val]
+                        new_shape_node.set(key, new_val)
+                    else:
+                        new_shape_node.set(key, val)
         return etree.tostring(
             new_panels_node,
             # pretty_print=True,

@@ -158,6 +158,7 @@ class FuzzyClassGenerator(object):
 
     @classmethod
     def generate(cls, modulepath, original_cls, cls_names_map):
+        method_names_map = {}
         print('Generate fuzzy information of {0}({1})'.format(
             original_cls.name,
             original_cls.full_name,
@@ -170,7 +171,7 @@ class FuzzyClassGenerator(object):
         print(' -> {0}({1})'.format(fuzzy.name, fuzzy.full_name))
 
         if original_cls.isInterface:
-            return fuzzy
+            return fuzzy, method_names_map
 
         # 方法名进行混淆
         used_fuzzy_method_names = set([])
@@ -182,13 +183,17 @@ class FuzzyClassGenerator(object):
                 continue
             # 构造函数, 重命名为跟混淆后的类名一致
             if method.name == original_cls.name:
+                method_names_map[method.name] = fuzzy.name
                 method.name = fuzzy.name
                 used_fuzzy_method_names.add(method.name)
                 continue
+            # 私有函数
             if method.visibility == 'private':
-                # 私有函数
+                # 在generate方法中已经把生成的名字加入集合中,
+                # 后面不再用 used_fuzzy_method_names.add(method.name)
                 name = cls._generate_fuzzy_method_name(used_fuzzy_method_names)
-                print(u'private method {0} -> {1}'.format(method.name, name))
+                # print(u'private method {0} -> {1}'.format(method.name, name))
+                method_names_map[method.name] = name
                 method.name = name
             # TODO 公有函数
 
@@ -218,7 +223,7 @@ class FuzzyClassGenerator(object):
                 # 公有静态常量
                 var.name = cls._generate_fuzzy_var_name(used_fuzzy_variable_names)
             # TODO 公有成员变量/常量
-        return fuzzy
+        return fuzzy, method_names_map
 
     @staticmethod
     def _generate_fuzzy_method_name(used_fuzzy_method_names):
