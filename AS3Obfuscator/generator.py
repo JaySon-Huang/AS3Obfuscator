@@ -7,6 +7,8 @@ import os
 import os.path
 import copy
 import random
+from collections import defaultdict
+
 random.seed('03620362')
 import string
 
@@ -156,9 +158,16 @@ class FuzzyClassGenerator(object):
         ),
     }
 
-    @classmethod
-    def generate(cls, modulepath, original_cls, cls_names_map):
+    def __init__(self, keep_static_constant_name):
+        self.keep_static_constants = defaultdict(list)
+        for full_name in keep_static_constant_name:
+            classname, constant_name = full_name.split('::')
+            self.keep_static_constants[classname].append(constant_name)
+
+    def generate(self, modulepath, original_cls, cls_names_map):
         method_names_map = {}
+        var_names_map = {}
+
         print('Generate fuzzy information of {0}({1})'.format(
             original_cls.name,
             original_cls.full_name,
@@ -171,7 +180,7 @@ class FuzzyClassGenerator(object):
         print(' -> {0}({1})'.format(fuzzy.name, fuzzy.full_name))
 
         if original_cls.isInterface:
-            return fuzzy, method_names_map
+            return fuzzy, method_names_map, var_names_map
 
         # 方法名进行混淆
         used_fuzzy_method_names = set([])
@@ -191,7 +200,7 @@ class FuzzyClassGenerator(object):
             if method.visibility == 'private':
                 # 在generate方法中已经把生成的名字加入集合中,
                 # 后面不再用 used_fuzzy_method_names.add(method.name)
-                name = cls._generate_fuzzy_method_name(used_fuzzy_method_names)
+                name = self._generate_fuzzy_method_name(used_fuzzy_method_names)
                 # print(u'private method {0} -> {1}'.format(method.name, name))
                 method_names_map[method.name] = name
                 method.name = name
@@ -218,12 +227,28 @@ class FuzzyClassGenerator(object):
         for var in fuzzy.variables.values():
             if var.visibility == 'private':
                 # 私有变量
-                var.name = cls._generate_fuzzy_var_name(used_fuzzy_variable_names)
-            elif var.isConstant and var.isStatic:
+                var_names_map[var.name] = self._generate_fuzzy_var_name(
+                    used_fuzzy_variable_names
+                )
+                var.name = var_names_map[var.name]
+            elif var.isConstant and var.isStatic and var.visibility == 'public':
                 # 公有静态常量
-                var.name = cls._generate_fuzzy_var_name(used_fuzzy_variable_names)
+                # 配置保留不进行混淆的静态常量名
+                if original_cls.full_name in self.keep_static_constants:
+                    keep_names = self.keep_static_constants[original_cls.full_name]
+                    if var.name in keep_names:
+                        print('Keep constant name: {0}::{1}'.format(
+                            original_cls.full_name, var.name
+                        ))
+                        used_fuzzy_variable_names.add(var.name)
+                        continue
+                # 非保留静态常量名, 则进行混淆
+                var_names_map[var.name] = self._generate_fuzzy_var_name(
+                    used_fuzzy_variable_names
+                )
+                var.name = var_names_map[var.name]
             # TODO 公有成员变量/常量
-        return fuzzy, method_names_map
+        return fuzzy, method_names_map, var_names_map
 
     @staticmethod
     def _generate_fuzzy_method_name(used_fuzzy_method_names):

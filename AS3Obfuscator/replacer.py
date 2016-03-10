@@ -307,7 +307,9 @@ class TagDoABCReplacer(object):
         abcfile.parse(SWFStream(BytesIO(original_tag.bytes)))
         replacer = ABCFileReplacer(
             abcfile, abcclass, packagename, classname,
-            self.names_map, self.packages
+            self.names_map, self.packages,
+            is_replace_public_constant=True,
+            is_clear_debug_messages=False
         )
         new_abcfile = replacer.replace()
         # 把替换后的abcfile转换为bytes
@@ -325,7 +327,8 @@ class TagDoABCReplacer(object):
 class ABCFileReplacer(object):
 
     def __init__(self, abcfile, abcclass, packagename, classname, names_map, packages,
-                 is_replace_public_constant=False):
+                 is_replace_public_constant=False,
+                 is_clear_debug_messages=False):
         self.abcfile = abcfile
         self.abcclass = abcclass
         self.new_abcfile = copy.deepcopy(abcfile)
@@ -334,6 +337,7 @@ class ABCFileReplacer(object):
         self.names_map = names_map
         self.packages = packages
         self.is_replace_public_constant = is_replace_public_constant
+        self.is_clear_debug_messages = is_clear_debug_messages
 
     def replace(self):
         self._replace_multiname(self.packagename, self.classname)
@@ -570,7 +574,7 @@ class ABCFileReplacer(object):
             new_code_bytes = replacer.replace(
                 method_body.code,
                 self.new_abcfile.const_pool,
-                is_remove_local_name=False,
+                is_remove_local_name=self.is_clear_debug_messages,
                 is_replace_public_constant=self.is_replace_public_constant
             )
             print(method_body.code.encode('hex'))
@@ -603,6 +607,7 @@ class InstructionReplacer(object):
                      InstructionDebugfile.FORM,
                      InstructionDebug.FORM)):
                     # debug指令的bytes用nop/label填充
+                    # TODO nop/label 随机填充来增大混乱信息?
                     new_code_bytes += '\x02' * len(instruct.code)
                     # 替换 debug 时显示的 string
                     if isinstance(instruct, InstructionDebugfile):
@@ -632,7 +637,7 @@ class InstructionReplacer(object):
                     info = self.const_pool.get_multiname(instruct.index)
                     if (info['namespace'] not in self.packages
                             or info['name'] not in self.packages[info['namespace']].classes):
-                        print('This Constant is not replaceable.')
+                        print('This Constant(`{0}`) is not replaceable.'.format(info['name']))
                         continue
                     cls = self.packages[info['namespace']].classes[info['name']]
                     print(
@@ -640,6 +645,9 @@ class InstructionReplacer(object):
                         '({0})'.format(repr(instruct.code.encode('hex')))
                     )
                     info = self.const_pool.get_multiname(next2_instruct.index)
+                    if info['name'] not in cls.fuzzy.variables:
+                        print('`{0}` may be a getter method.'.format(info['name']))
+                        continue
                     const = cls.fuzzy.variables[info['name']]
                     const_name_index = self.const_pool._multinames[next2_instruct.index].name
                     # 替换为混淆后的常量名

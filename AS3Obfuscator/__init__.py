@@ -35,7 +35,9 @@ class AS3Obfuscator(object):
 
     def __init__(self, src_dir, dst_dir,
                  ignore_paths=None, ignore_classes=None,
-                 keep_classname_classes=None):
+                 keep_classname_classes=None,
+                 keep_static_constant_name=None):
+        # 是否保存混淆之后的 .as 文件.
         self.is_move_source_codes = False
         self._paths = {
             'src': src_dir,
@@ -45,6 +47,7 @@ class AS3Obfuscator(object):
             'module': {},
             'class': {},
             'method': {},
+            'var': {},
         }
         self._module_generator = FuzzyModulenameGenerator(self._paths)
         self._classname_generator = FuzzyClassnameGenerator(self._paths)
@@ -55,10 +58,21 @@ class AS3Obfuscator(object):
             ]
         else:
             self._ignore_paths = []
+        # 整个类进行例外, 不处理类内所有信息
         self._ignore_classes = ignore_classes if ignore_classes is not None else []
+        # 保持不混淆的 类名
         self._keep_classname_classes = (
             keep_classname_classes if keep_classname_classes is not None else []
         )
+        # 保持不混淆的 静态常量名
+        self._keep_static_constant_name = (
+            keep_static_constant_name if keep_static_constant_name is not None else []
+        )
+
+        # ActionScript3/MXML 语法解析器
+        self._builder = asdox.asBuilder.Builder()
+        # 解析出来的 ActionScript3类 信息
+        self._packages = {}
 
     def _reproduce_module(self, src_root, dst_root, is_move_files=False):
         """
@@ -130,6 +144,10 @@ class AS3Obfuscator(object):
                 watcher_class = get_dummy_watcher_class(old_cls_meta['full_name'])
                 print('Generate Class', watcher_class.full_name)
                 if watcher_class.full_name not in self._classname_generator.names_map:
+                    # FIX bug: 有时候 ASPackage('') 未定义, 在这里创建一个空的 ASPackage('')
+                    if self._builder.packages.get('') is None:
+                        import asdox.asModel
+                        self._builder.packages[''] = asdox.asModel.ASPackage('')
                     self._builder.packages[''].classes[watcher_class.name] = watcher_class
                     self._classname_generator.set_name_map(
                         watcher_class.full_name,
@@ -172,7 +190,6 @@ class AS3Obfuscator(object):
         print('parsing original source files in {0} ...'.format(
             self._paths['src']
         ))
-        self._builder = asdox.asBuilder.Builder()
         if self.is_move_source_codes:
             print('clean up {0} ...'.format(self._paths['dst']))
             if os.path.exists(self._paths['dst']):
@@ -188,19 +205,22 @@ class AS3Obfuscator(object):
         del self._builder
 
         print('generating new infos ...')
+        class_generator = FuzzyClassGenerator(self._keep_static_constant_name)
         for pkg in self._packages.values():
             for cls in pkg.classes.values():
-                cls.fuzzy, method_names_map = FuzzyClassGenerator.generate(
+                cls.fuzzy, method_names_map, var_names_map = class_generator.generate(
                     pkg.name, cls,
                     self._names_map['class']
                 )
                 self._names_map['method'][cls.full_name] = method_names_map
+                self._names_map['var'][cls.full_name] = var_names_map
             for interface in pkg.interfaces.values():
-                interface.fuzzy, method_names_map = FuzzyClassGenerator.generate(
+                interface.fuzzy, method_names_map, var_names_map = class_generator.generate(
                     pkg.name, interface,
                     self._names_map['class']
                 )
                 self._names_map['method'][interface.full_name] = method_names_map
+                self._names_map['var'][interface.full_name] = var_names_map
 
         # 记录映射关系
         print(json.dumps(self._names_map, indent=4))
