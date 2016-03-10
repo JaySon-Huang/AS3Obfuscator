@@ -17,8 +17,6 @@ from swf.stream import SWFStream
 from swf.tag import (TagDoABC, TagSymbolClass, TagDefineBinaryData)
 from swf.abcfile import ABCFile, StMethodInfo, StMultiname, CONSTANT_KIND_NAME
 from swf.abcfile.trait import (
-    StTraitClass,
-    StTraitFunction,
     StTraitMethod,
     StTraitSlot
 )

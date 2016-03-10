@@ -1,6 +1,9 @@
-names_map.json
+*.json
 *.pydata
 
 samples/Bio/
 samples/Math/
 samples/Chem/
+run_bio.sh
+run_chem.sh
+run_math.sh
