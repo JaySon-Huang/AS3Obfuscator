@@ -38,6 +38,7 @@ from converter import (
     TagSymbolConverter,
     TagDefineBinaryDataConverter,
 )
+from logger import logger
 
 range = xrange
 
@@ -204,7 +205,7 @@ class SWFFileReplacer(object):
                 3 + 1 + 4:s.tags[0].file_offset  # copy 'FWS' + version + length 到 第一个tag之间的内容
             ])
             for tag in s.tags:
-                print('0x{0:04x}({1:5d}) Tag:{2}'.format(
+                logger.debug('0x{0:04x}({1:5d}) Tag:{2}'.format(
                     tag.file_offset, tag.header.tag_length, tag.name
                 ))
                 # tag替换内容提炼为Replacer系列类的功能
@@ -212,15 +213,15 @@ class SWFFileReplacer(object):
                 if tag.type == TagDoABC.TYPE:
                     new_tag = TagDoABCReplacer(self.packages, self.names_map).replace(tag)
                     if new_tag is not tag:
-                        print('modified TagDoABC: {0}'.format(tag.abcName))
+                        logger.debug('modified TagDoABC: {0}'.format(tag.abcName))
                     else:
-                        print('not modified TagDoABC: {0}'.format(tag.abcName))
+                        logger.debug('not modified TagDoABC: {0}'.format(tag.abcName))
                     outfile.write(TagDoABCConverter.to_bytes(new_tag))
                 elif tag.type == TagSymbolClass.TYPE:
                     new_tag = TagSymbolReplacer(self.packages, self.names_map).replace(tag)
                     outfile.write(TagSymbolConverter.to_bytes(new_tag))
                 elif tag.type == TagDefineBinaryData.TYPE:
-                    print(tag.name, tag.characterId, self.symbols[tag.characterId])
+                    logger.debug(tag.name, tag.characterId, self.symbols[tag.characterId])
                     if self.symbols[tag.characterId] not in self.names_map['class']:
                         new_tag = tag
                     else:
@@ -290,7 +291,7 @@ class TagDoABCReplacer(object):
         if not is_class_in_packages(self.packages, packagename, classname):
             return original_tag
 
-        print('Obfuscating Tag', original_tag.abcName, '...')
+        logger.debug('Obfuscating Tag', original_tag.abcName, '...')
         # 从包名,类名中获取源代码中解析出的信息
         abcclass = get_class_from_packages(self.packages, packagename, classname)
 
@@ -343,9 +344,9 @@ class ABCFileReplacer(object):
         self._replace_classes(self.packagename, self.classname)
 
         # noinspection PyProtectedMember
-        pprint.pprint(list(enumerate(zip(
+        logger.debug(pprint.pformat(list(enumerate(zip(
             self.new_abcfile.const_pool._strings, self.abcfile.const_pool._strings
-        ))))
+        )))))
 
         # 丢弃函数传入参数名信息
         for method in self.new_abcfile.methods:
@@ -406,18 +407,18 @@ class ABCFileReplacer(object):
                 if info['name'] in self.abcclass.methods:
                     new_method_name = self.abcclass.fuzzy.methods[info['name']].name
                     self._set_new_string(multiname.name, new_method_name)
-                    print(u'Replace by {0}({1})'.format(new_method_name, multiname.name))
+                    logger.debug(u'Replace by {0}({1})'.format(new_method_name, multiname.name))
                 elif info['name'] in self.abcclass.variables:
                     new_var_name = self.abcclass.fuzzy.variables[info['name']].name
                     self._set_new_string(multiname.name, new_var_name)
-                    print(u'Replace by {0}({1})'.format(new_var_name, multiname.name))
+                    logger.debug(u'Replace by {0}({1})'.format(new_var_name, multiname.name))
             elif info['namespace'] == '':
                 # 根package中其他文件中定义的类
                 if info['name'] in self.packages[''].classes:
                     other_class = self.packages[''].classes[info['name']]
                     new_classname = other_class.fuzzy.name
                     self._set_new_string(multiname.name, new_classname)
-                    print('Replace by {0}({1})'.format(new_classname, multiname.name))
+                    logger.debug('Replace by {0}({1})'.format(new_classname, multiname.name))
             elif info['namespace'] in self.names_map['module']:
                 if not is_class_in_packages(self.packages, info['namespace'], info['name']):
                     continue
@@ -432,7 +433,7 @@ class ABCFileReplacer(object):
                 # 替换为混淆后的包名
                 new_namespace = self.names_map['module'][info['namespace']]
                 self._set_new_namespace(multiname.ns, new_namespace)
-                print(u'Replace by {0}({1}) {2}({3})'.format(
+                logger.debug(u'Replace by {0}({1}) {2}({3})'.format(
                     new_classname, multiname.name,
                     new_namespace, self.abcfile.const_pool.namespaces[multiname.ns]
                 ))
@@ -442,13 +443,13 @@ class ABCFileReplacer(object):
         for instance in self.abcfile.instances:
             # 替换实现的 interface
             if len(instance.interfaces) != 0:
-                print('Implemented interfaces:')
+                logger.debug('Implemented interfaces:')
                 for interface in instance.interfaces:
                     multiname = self._get_original_multiname(interface)
                     assert multiname.kind == StMultiname.Multiname
                     ns_set = self._get_original_namespace_set(multiname.ns_set)
                     assert len(ns_set) == 1
-                    print(self.abcfile.const_pool.get_multiname_string(interface))
+                    logger.debug(self.abcfile.const_pool.get_multiname_string(interface))
                     pkg_name = self._get_original_namespace(ns_set[0])
                     interface_name = self._get_original_string(multiname.name)
                     if not is_class_in_packages(self.packages, pkg_name, interface_name):
@@ -457,7 +458,7 @@ class ABCFileReplacer(object):
                         self._get_new_interface(pkg_name, interface_name)
                     self._set_new_namespace(ns_set[0], new_pkg_name)
                     self._set_new_string(multiname.name, new_interface_name)
-                    print('Interface Replace by {0}.{1}'.format(
+                    logger.debug('Interface Replace by {0}.{1}'.format(
                         new_pkg_name,
                         new_interface_name
                     ))
@@ -481,10 +482,9 @@ class ABCFileReplacer(object):
         for class_ in self.abcfile.classes:
             for trait in class_.traits:
                 if self.is_replace_public_constant and isinstance(trait, StTraitSlot):
-                    print(
-                        'Name:',
+                    logger.debug('Name: {0}'.format(
                         self.abcfile.const_pool.get_multiname_string(trait.name)
-                    )
+                    ))
                     info = self.abcfile.const_pool.get_multiname(trait.name)
                     if info['name'] in self.abcclass.variables:
                         const_name_index = self.abcfile.const_pool._multinames[trait.name].name
@@ -492,7 +492,9 @@ class ABCFileReplacer(object):
                             const_name_index,
                             self.abcclass.fuzzy.variables[info['name']].name
                         )
-                        print('Replace by', self._get_new_string(const_name_index))
+                        logger.debug('Replace by {}'.format(
+                            self._get_new_string(const_name_index)
+                        ))
 
     def _replace_method_trait(self, trait, packagename):
         methodname_index = self.abcfile.methods[trait.method].name
@@ -520,7 +522,7 @@ class ABCFileReplacer(object):
             directname_index,
             new_info['methodname']
         )
-        print(u"instance's method trait name Replace by {0}({1}) {2}({3})".format(
+        logger.debug(u"instance's method trait name Replace by {0}({1}) {2}({3})".format(
             self._get_new_string(directname_index), directname_index,
             self._get_new_string(methodname_index), methodname_index
         ))
@@ -561,10 +563,9 @@ class ABCFileReplacer(object):
         # 丢弃字节中的debug信息, 从而消除局部变量名
         for method_body in self.new_abcfile.method_bodies:
             method_name_index = self.new_abcfile.methods[method_body.method].name
-            print(
-                u'Method name:',
+            logger.debug(u'Method name: {}'.format(
                 self._get_original_string(method_name_index)
-            )
+            ))
             replacer = InstructionReplacer(
                 self.names_map, self.packages,
                 self.abcfile.const_pool
@@ -575,9 +576,11 @@ class ABCFileReplacer(object):
                 is_remove_local_name=self.is_clear_debug_messages,
                 is_replace_public_constant=self.is_replace_public_constant
             )
-            print(method_body.code.encode('hex'))
+            # 替换前的字节码的十六进制串
+            # logger.debug(method_body.code.encode('hex'))
             method_body.code = new_code_bytes
-            print(method_body.code.encode('hex'))
+            # 替换后的字节码的十六进制串
+            # logger.debug(method_body.code.encode('hex'))
 
 
 class InstructionReplacer(object):
@@ -593,12 +596,12 @@ class InstructionReplacer(object):
                 is_remove_local_name=True,
                 is_replace_public_constant=False):
         new_code_bytes = ''
-        print('Replacing Debug messages...')
+        logger.info('Replacing Debug messages...')
         for instruct in Instruction.iter_instructions(code_bytes):
-            print(
+            logger.debug('{0}({1})'.format(
                 instruct.resolve(self.const_pool),
-                '({0})'.format(repr(instruct.code.encode('hex')))
-            )
+                repr(instruct.code.encode('hex'))
+            ))
             if (is_remove_local_name
                 and instruct.FORM in
                     (InstructionDebugline.FORM,
@@ -615,7 +618,7 @@ class InstructionReplacer(object):
 
         if is_replace_public_constant:
             # 替换类公有常量名在其他代码中的引用
-            print('Replacing public constant names...')
+            logger.info('Replacing public constant names...')
             instructions = Instruction.parse_code(code_bytes)
             for index, instruct in enumerate(instructions):
                 if instruct.FORM == InstructionFindpropstrict.FORM:
@@ -625,26 +628,26 @@ class InstructionReplacer(object):
                     if not (next1_instruct.FORM == InstructionGetproperty.FORM
                             and next2_instruct.FORM == InstructionGetproperty.FORM):
                         continue
-                    print(
+                    logger.debug('{0}({1})'.format(
                         instruct.resolve(self.const_pool),
-                        '({0})'.format(repr(instruct.code.encode('hex')))
-                    )
+                        repr(instruct.code.encode('hex'))
+                    ))
                     if (self.const_pool._multinames[instruct.index].kind
                             not in (StMultiname.QName, StMultiname.QNameA)):
                         continue
                     info = self.const_pool.get_multiname(instruct.index)
                     if (info['namespace'] not in self.packages
                             or info['name'] not in self.packages[info['namespace']].classes):
-                        print('This Constant(`{0}`) is not replaceable.'.format(info['name']))
+                        logger.debug('This Constant(`{0}`) is not replaceable.'.format(info['name']))
                         continue
                     cls = self.packages[info['namespace']].classes[info['name']]
-                    print(
+                    logger.debug('{0}({1})'.format(
                         next2_instruct.resolve(self.const_pool),
-                        '({0})'.format(repr(instruct.code.encode('hex')))
-                    )
+                        repr(instruct.code.encode('hex'))
+                    ))
                     info = self.const_pool.get_multiname(next2_instruct.index)
                     if info['name'] not in cls.fuzzy.variables:
-                        print('`{0}` may be a getter method.'.format(info['name']))
+                        logger.debug('`{0}` may be a getter method.'.format(info['name']))
                         continue
                     const = cls.fuzzy.variables[info['name']]
                     const_name_index = self.const_pool._multinames[next2_instruct.index].name

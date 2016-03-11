@@ -17,6 +17,7 @@ from generator import (
     FuzzyModulenameGenerator,
     FuzzyClassnameGenerator,
 )
+from logger import logger
 
 
 def get_dummy_watcher_class(class_full_name):
@@ -43,11 +44,12 @@ class AS3Obfuscator(object):
             'src': src_dir,
             'dst': dst_dir
         }
+        # 记录混淆前->混淆后的名字
         self._names_map = {
-            'module': {},
-            'class': {},
-            'method': {},
-            'var': {},
+            'module': {},  # 模块名
+            'class': {},   # 类名
+            'method': {},  # 方法名
+            'var': {},     # 变量名
         }
         self._module_generator = FuzzyModulenameGenerator(self._paths)
         self._classname_generator = FuzzyClassnameGenerator(self._paths)
@@ -110,7 +112,7 @@ class AS3Obfuscator(object):
         """
         old_cls_meta = self._classname_generator.collect_old_meta(src_root, filename)
         if old_cls_meta['full_name'] in self._ignore_classes:
-            print('ignore class:', os.path.join(src_root, filename))
+            logger.debug('ignore class: {0}'.format(os.path.join(src_root, filename)))
             # 忽略的类, 直接复制到目标文件夹下
             if is_move_files:
                 shutil.copy2(
@@ -142,7 +144,7 @@ class AS3Obfuscator(object):
             if src_root != self._paths['src']:
                 # 框架生成的 WatcherSetupUtil 类, 把其加入swf文件中处理二进制中的包名/类名
                 watcher_class = get_dummy_watcher_class(old_cls_meta['full_name'])
-                print('Generate Class', watcher_class.full_name)
+                logger.debug('[Generate Class] {}'.format(watcher_class.full_name))
                 if watcher_class.full_name not in self._classname_generator.names_map:
                     # FIX bug: 有时候 ASPackage('') 未定义, 在这里创建一个空的 ASPackage('')
                     if self._builder.packages.get('') is None:
@@ -187,11 +189,11 @@ class AS3Obfuscator(object):
             return
 
     def run(self, swf_filename):
-        print('parsing original source files in {0} ...'.format(
+        logger.info('Parsing original source files in {0} ...'.format(
             self._paths['src']
         ))
         if self.is_move_source_codes:
-            print('clean up {0} ...'.format(self._paths['dst']))
+            logger.info('Clean up {0} ...'.format(self._paths['dst']))
             if os.path.exists(self._paths['dst']):
                 shutil.rmtree(self._paths['dst'])
             os.makedirs(self._paths['dst'])
@@ -204,7 +206,7 @@ class AS3Obfuscator(object):
         self._packages = self._builder.packages
         del self._builder
 
-        print('generating new infos ...')
+        logger.info('Generating new information ...')
         class_generator = FuzzyClassGenerator(self._keep_static_constant_name)
         for pkg in self._packages.values():
             for cls in pkg.classes.values():
@@ -223,23 +225,25 @@ class AS3Obfuscator(object):
                 self._names_map['var'][interface.full_name] = var_names_map
 
         # 记录映射关系
-        print(json.dumps(self._names_map, indent=4))
-        with open('names_map.json', 'w') as outfile:
-            print(json.dumps(self._names_map, indent=4), file=outfile)
+        names_map_filename = 'names_map.json'
+        logger.info('Dumped NamesMap -> {0}'.format(names_map_filename))
+        logger.debug('NamesMap: {0}'.format(json.dumps(self._names_map, indent=4)))
+        with open(names_map_filename, 'w') as outfile:
+            outfile.write(json.dumps(self._names_map, indent=4))
 
         pydata_filename = swf_filename.split(os.sep)[2]
         dump_filename = 'self.' + pydata_filename + '.pydata'
         import cPickle as pickle
         with open(dump_filename, 'w') as outfile:
             pickle.dump(self, outfile)
-            print('dumped `self` to `{0}`....'.format(dump_filename))
+            logger.info('Dumped `self` to `{0}`....'.format(dump_filename))
 
-        print('Analysing swf file:{0} ...'.format(swf_filename))
+        logger.info('Analysing swf file:{0} ...'.format(swf_filename))
         replacer = SWFFileReplacer(self._packages, self._names_map)
         name, ext = os.path.splitext(swf_filename)
         out_filename = name + '.obfused' + ext
         replacer.replace(swf_filename, out_filename)
-        print('Replacing SWF file {0} -> {1}'.format(swf_filename, out_filename))
+        logger.info('[FINISHED] Replaced SWF file {0} -> {1}'.format(swf_filename, out_filename))
         return None
 
     def debug(self, swf_filename):

@@ -13,6 +13,7 @@ random.seed('03620362')
 import string
 
 from utils import filepath2module, module2filepath
+from logger import logger
 
 FUCKUP_PUNCTUATIONS = '{|}!#$%()*+;='
 
@@ -68,7 +69,7 @@ class FuzzyModulenameGenerator(object):
         assert old_full_path not in self._names_map
         self._names_map[old_full_path] = new_full_path
         self._names_map_r[new_full_path] = old_full_path
-        print('[Module] {0} -> {1}'.format(
+        logger.debug('[Module] {0} -> {1}'.format(
             filepath2module(old_full_path), filepath2module(new_full_path)
         ))
 
@@ -135,7 +136,7 @@ class FuzzyClassnameGenerator(object):
         assert old_full_path not in self._names_map
         self._names_map[old_full_path] = new_full_path
         self._names_map_r[new_full_path] = old_full_path
-        print('[Class] {0} -> {1}'.format(
+        logger.debug('[Class] {0} -> {1}'.format(
             filepath2module(old_full_path), filepath2module(new_full_path)
         ))
 
@@ -168,16 +169,15 @@ class FuzzyClassGenerator(object):
         method_names_map = {}
         var_names_map = {}
 
-        print('Generate fuzzy information of {0}({1})'.format(
-            original_cls.name,
-            original_cls.full_name,
-        ), end='')
         fuzzy = copy.deepcopy(original_cls)
         fuzzy.full_name = filepath2module(cls_names_map[
             module2filepath(original_cls.full_name)
         ])
         fuzzy.name = fuzzy.full_name.split('.')[-1]
-        print(' -> {0}({1})'.format(fuzzy.name, fuzzy.full_name))
+        logger.debug('[Fuzzing] {0}({1})\n\t-> {2}({3})'.format(
+            original_cls.name, original_cls.full_name,
+            fuzzy.name, fuzzy.full_name
+        ))
 
         if original_cls.isInterface:
             return fuzzy, method_names_map, var_names_map
@@ -237,7 +237,7 @@ class FuzzyClassGenerator(object):
                 if original_cls.full_name in self.keep_static_constants:
                     keep_names = self.keep_static_constants[original_cls.full_name]
                     if var.name in keep_names:
-                        print('Keep constant name: {0}::{1}'.format(
+                        logger.info('Keep constant name: {0}::{1}'.format(
                             original_cls.full_name, var.name
                         ))
                         used_fuzzy_variable_names.add(var.name)

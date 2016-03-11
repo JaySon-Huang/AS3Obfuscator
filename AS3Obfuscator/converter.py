@@ -234,9 +234,9 @@ class StMethodBodyConverter(object):
         return out_stream.getvalue()
 
 
-# noinspection PyProtectedMember
 class ABCFileConverter(object):
 
+    # noinspection PyProtectedMember
     @staticmethod
     def to_bytes(abcfile):
         out_stream = ABCFileOutputStream()
