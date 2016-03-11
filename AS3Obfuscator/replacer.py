@@ -99,7 +99,10 @@ class SWFFileReplacer(object):
                     new_tag = TagSymbolReplacer(self.packages, self.names_map).replace(tag)
                     outfile.write(TagSymbolConverter.to_bytes(new_tag))
                 elif tag.type == TagDefineBinaryData.TYPE:
-                    logger.debug(tag.name, tag.characterId, self.symbols[tag.characterId])
+                    logger.debug('{0} {1} {2}'.format(
+                        tag.name, tag.characterId,
+                        self.symbols[tag.characterId]
+                    ))
                     if self.symbols[tag.characterId] not in self.names_map['class']:
                         new_tag = tag
                     else:
@@ -169,7 +172,7 @@ class TagDoABCReplacer(object):
         if not is_class_in_packages(self.packages, packagename, classname):
             return original_tag
 
-        logger.debug('Obfuscating Tag', original_tag.abcName, '...')
+        logger.debug('Obfuscating Tag {0} ...'.format(original_tag.abcName))
         # 从包名,类名中获取源代码中解析出的信息
         abcclass = get_class_from_packages(self.packages, packagename, classname)
 
@@ -275,7 +278,7 @@ class ABCFileReplacer(object):
         for index, multiname in enumerate(self._get_original_multiname_all()):
             if index == 0:
                 continue
-            print(self.abcfile.const_pool.get_multiname_string(index))
+            logger.debug(self.abcfile.const_pool.get_multiname_string(index))
             # 只处理QName/QNameA的 multiname
             if multiname.kind not in (StMultiname.QName, StMultiname.QNameA):
                 continue
