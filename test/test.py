@@ -5,10 +5,10 @@ from __future__ import print_function
 import sys, os.path
 sys.path.append(os.path.abspath('..'))
 
-import asdox
-import asdox.asBuilder
+import thirdparty.asdox
+import thirdparty.asdox.asBuilder
 
-builder = asdox.asBuilder.Builder()
+builder = thirdparty.asdox.asBuilder.Builder()
 
 # 主要测试 import/namespace 语句
 # builder.addSource('samples/simple/simple_import.as')
@@ -116,17 +116,18 @@ builder = asdox.asBuilder.Builder()
 # )
 # obfuscator.run('./samples/as_test/out/production/as_test/Main.decompressed.swf')
 
-
+import sys
+sys.path.append('../thirdparty')
 from AS3Obfuscator import AS3Obfuscator
 obfuscator = AS3Obfuscator(
-    './samples/Bio/src',
-    './samples/Bio/obfuscated',
+    r'D:\Projects\Lab\czxkpt\trunk\Bio\src',
+    r'D:\Projects\Lab\czxkpt\trunk\Bio\obfused',
     ignore_paths=['res', ],
     ignore_classes=[],
     keep_classname_classes=['TeachConfig.as', ],
     keep_static_constant_name=['TeachConfig::s_subject', ]
 )
-obfuscator.run('./samples/Bio/out/production/Bio/Teach.decompressed.swf')
+obfuscator.run(r'D:\Projects\Lab\czxkpt\trunk\Bio\out\production\Bio\Teach.decompressed.swf')
 # obfuscator.debug('./samples/Bio/out/production/Bio/Teach.decompressed.swf')
 
 

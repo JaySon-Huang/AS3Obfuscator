@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # encoding=utf-8
 
-from swf.abcfile import StMethodInfo, StInstanceInfo
-from swf.abcfile.trait import TraitFactory
-from swf.abcfile.constant_pool import StMultiname
+from thirdparty.swf.abcfile import StMethodInfo, StInstanceInfo
+from thirdparty.swf.abcfile.trait import TraitFactory
+from thirdparty.swf.abcfile.constant_pool import StMultiname
 from stream import ABCFileOutputStream
 
 

@@ -7,8 +7,7 @@ import os
 import os.path
 import json
 import shutil
-
-import asdox.asBuilder
+import thirdparty.asdox.asBuilder
 
 from utils import filepath2module, module2filepath
 from replacer import SWFFileReplacer
@@ -24,7 +23,7 @@ def get_dummy_watcher_class(class_full_name):
     watcher_name = '_{0}WatcherSetupUtil'.format(
         '_'.join(class_full_name.split('.'))
     )
-    from asdox.asModel import ASClass, ASMethod
+    from thirdparty.asdox.asModel import ASClass, ASMethod
     cls = ASClass(watcher_name)
     constructor = ASMethod(watcher_name)
     constructor.visibility = 'public'
@@ -72,7 +71,7 @@ class AS3Obfuscator(object):
         )
 
         # ActionScript3/MXML 语法解析器
-        self._builder = asdox.asBuilder.Builder()
+        self._builder = thirdparty.asdox.asBuilder.Builder()
         # 解析出来的 ActionScript3类 信息
         self._packages = {}
 
@@ -148,8 +147,8 @@ class AS3Obfuscator(object):
                 if watcher_class.full_name not in self._classname_generator.names_map:
                     # FIX bug: 有时候 ASPackage('') 未定义, 在这里创建一个空的 ASPackage('')
                     if self._builder.packages.get('') is None:
-                        import asdox.asModel
-                        self._builder.packages[''] = asdox.asModel.ASPackage('')
+                        import thirdparty.asdox.asModel
+                        self._builder.packages[''] = thirdparty.asdox.asModel.ASPackage('')
                     self._builder.packages[''].classes[watcher_class.name] = watcher_class
                     self._classname_generator.set_name_map(
                         watcher_class.full_name,
@@ -216,6 +215,31 @@ class AS3Obfuscator(object):
                 )
                 self._names_map['method'][cls.full_name] = method_names_map
                 self._names_map['var'][cls.full_name] = var_names_map
+                # embed 嵌入的数据类
+                vars_with_metatag = filter(
+                    lambda var: (var.type_ == 'Class'
+                                 and len(var.metadata) != 0
+                                 and var.metadata[0].name == 'Embed'),
+                    cls.variables.values()
+                )
+                for var in vars_with_metatag:
+                    from thirdparty.asdox.asModel import ASClass
+                    embed_class = ASClass('{0}_{1}'.format(cls.name, var.name))
+                    embed_class.full_name = '{0}_{1}'.format(cls.full_name, var.name)
+                    embed_class.fuzzy = ASClass('{0}_{1}'.format(
+                        cls.fuzzy.name,
+                        cls.fuzzy.variables[var.name].name
+                    ))
+                    embed_class.fuzzy.full_name = '{0}_{1}'.format(
+                        cls.fuzzy.full_name,
+                        cls.fuzzy.variables[var.name].name
+                    )
+                    self._packages[pkg.name].classes[embed_class.name] = embed_class
+                    logger.debug('[Generate embed class] {0}({1}) -> {2}({3})'.format(
+                        embed_class.name, embed_class.full_name,
+                        embed_class.fuzzy.name, embed_class.fuzzy.full_name
+                    ))
+                    self._names_map['class'][embed_class.full_name] = embed_class.fuzzy.full_name
             for interface in pkg.interfaces.values():
                 interface.fuzzy, method_names_map, var_names_map = class_generator.generate(
                     pkg.name, interface,

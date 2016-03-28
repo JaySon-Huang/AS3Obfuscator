@@ -12,15 +12,15 @@ from six import BytesIO
 import lxml
 from lxml import etree
 
-from swf.movie import SWF
-from swf.stream import SWFStream
-from swf.tag import (TagDoABC, TagSymbolClass, TagDefineBinaryData)
-from swf.abcfile import ABCFile, StMethodInfo, StMultiname, CONSTANT_KIND_NAME
-from swf.abcfile.trait import (
+from thirdparty.swf.movie import SWF
+from thirdparty.swf.stream import SWFStream
+from thirdparty.swf.tag import (TagDoABC, TagSymbolClass, TagDefineBinaryData)
+from thirdparty.swf.abcfile import ABCFile, StMethodInfo, StMultiname, CONSTANT_KIND_NAME
+from thirdparty.swf.abcfile.trait import (
     StTraitMethod,
     StTraitSlot
 )
-from swf.abcfile.instruction import (
+from thirdparty.swf.abcfile.instruction import (
     Instruction,
     InstructionDebugline,
     InstructionDebugfile,
@@ -83,9 +83,9 @@ class SWFFileReplacer(object):
                 3 + 1 + 4:s.tags[0].file_offset  # copy 'FWS' + version + length 到 第一个tag之间的内容
             ])
             for tag in s.tags:
-                logger.debug('0x{0:04x}({1:5d}) Tag:{2}'.format(
-                    tag.file_offset, tag.header.tag_length, tag.name
-                ))
+                # logger.debug('0x{0:04x}({1:5d}) Tag:{2}'.format(  # log tag的位置
+                #     tag.file_offset, tag.header.tag_length, tag.name
+                # ))
                 # tag替换内容提炼为Replacer系列类的功能
                 # tag转换为bytes提炼为Converter系列类的功能
                 if tag.type == TagDoABC.TYPE:
@@ -93,7 +93,8 @@ class SWFFileReplacer(object):
                     if new_tag is not tag:
                         logger.debug('modified TagDoABC: {0}'.format(tag.abcName))
                     else:
-                        logger.debug('not modified TagDoABC: {0}'.format(tag.abcName))
+                        # logger.debug('not modified TagDoABC: {0}'.format(tag.abcName))
+                        pass
                     outfile.write(TagDoABCConverter.to_bytes(new_tag))
                 elif tag.type == TagSymbolClass.TYPE:
                     new_tag = TagSymbolReplacer(self.packages, self.names_map).replace(tag)
@@ -479,10 +480,10 @@ class InstructionReplacer(object):
         new_code_bytes = ''
         logger.info('Replacing Debug messages...')
         for instruct in Instruction.iter_instructions(code_bytes):
-            logger.debug('{0}({1})'.format(
-                instruct.resolve(self.const_pool),
-                repr(instruct.code.encode('hex'))
-            ))
+            # logger.debug('{0}({1})'.format(  # 指令
+            #     instruct.resolve(self.const_pool),
+            #     repr(instruct.code.encode('hex'))
+            # ))
             if (is_remove_local_name
                 and instruct.FORM in
                     (InstructionDebugline.FORM,
@@ -509,10 +510,11 @@ class InstructionReplacer(object):
                     if not (next1_instruct.FORM == InstructionGetproperty.FORM
                             and next2_instruct.FORM == InstructionGetproperty.FORM):
                         continue
-                    logger.debug('{0}({1})'.format(
-                        instruct.resolve(self.const_pool),
-                        repr(instruct.code.encode('hex'))
-                    ))
+                    # 指令
+                    # logger.debug('{0}({1})'.format(
+                    #     instruct.resolve(self.const_pool),
+                    #     repr(instruct.code.encode('hex'))
+                    # ))
                     if (self.const_pool._multinames[instruct.index].kind
                             not in (StMultiname.QName, StMultiname.QNameA)):
                         continue
@@ -522,10 +524,10 @@ class InstructionReplacer(object):
                         logger.debug('This Constant(`{0}`) is not replaceable.'.format(info['name']))
                         continue
                     cls = self.packages[info['namespace']].classes[info['name']]
-                    logger.debug('{0}({1})'.format(
-                        next2_instruct.resolve(self.const_pool),
-                        repr(instruct.code.encode('hex'))
-                    ))
+                    # logger.debug('{0}({1})'.format(
+                    #     next2_instruct.resolve(self.const_pool),
+                    #     repr(instruct.code.encode('hex'))
+                    # ))
                     info = self.const_pool.get_multiname(next2_instruct.index)
                     if info['name'] not in cls.fuzzy.variables:
                         logger.debug('`{0}` may be a getter method.'.format(info['name']))
