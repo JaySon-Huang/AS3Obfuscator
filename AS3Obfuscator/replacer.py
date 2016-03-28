@@ -31,6 +31,7 @@ from thirdparty.swf.abcfile.instruction import (
 from utils import (
     filepath2module, module2filepath,
     splitABCName, joinPackageClassName,
+    decompress, compress
 )
 
 from converter import (
@@ -70,53 +71,62 @@ class SWFFileReplacer(object):
                     self.symbols[symbol.tagId] = symbol.name
 
     def replace(self, swf_filename, out_filename):
+        # 解压文件读出原字节串
         with open(swf_filename, 'rb') as infile:
-            s = SWF(infile, is_quick_mode=True)
-            infile.seek(0)
-            original_bytes = infile.read()
-            self._load_symbols_id(s)
-        with open(out_filename, 'wb') as outfile:
-            outfile.write('FWS')
-            outfile.write(struct.pack('B', s.header.version))
-            outfile.write(struct.pack('<I', 0))  # 先占4bytes空间, 最后再seek到这里写入数据
-            outfile.write(original_bytes[
-                3 + 1 + 4:s.tags[0].file_offset  # copy 'FWS' + version + length 到 第一个tag之间的内容
-            ])
-            for tag in s.tags:
-                # logger.debug('0x{0:04x}({1:5d}) Tag:{2}'.format(  # log tag的位置
-                #     tag.file_offset, tag.header.tag_length, tag.name
-                # ))
-                # tag替换内容提炼为Replacer系列类的功能
-                # tag转换为bytes提炼为Converter系列类的功能
-                if tag.type == TagDoABC.TYPE:
-                    new_tag = TagDoABCReplacer(self.packages, self.names_map).replace(tag)
-                    if new_tag is not tag:
-                        logger.debug('modified TagDoABC: {0}'.format(tag.abcName))
-                    else:
-                        # logger.debug('not modified TagDoABC: {0}'.format(tag.abcName))
-                        pass
-                    outfile.write(TagDoABCConverter.to_bytes(new_tag))
-                elif tag.type == TagSymbolClass.TYPE:
-                    new_tag = TagSymbolReplacer(self.packages, self.names_map).replace(tag)
-                    outfile.write(TagSymbolConverter.to_bytes(new_tag))
-                elif tag.type == TagDefineBinaryData.TYPE:
-                    logger.debug('[TagDefineBinaryData] {0} {1}'.format(
-                        tag.characterId, self.symbols[tag.characterId]
-                    ))
-                    if self.symbols[tag.characterId] not in self.names_map['class']:
-                        new_tag = tag
-                    else:
-                        new_tag = TagDefineBinaryDataReplacer(self.names_map, self.symbols).replace(tag)
-                    outfile.write(TagDefineBinaryDataConverter.to_bytes(new_tag))
+            original_bytes = decompress(infile.read())
+        s = SWF(BytesIO(original_bytes), is_quick_mode=True)
+        self._load_symbols_id(s)
+        # 写出的字节流
+        out_stream = BytesIO()
+        out_stream.write('FWS')
+        out_stream.write(struct.pack('B', s.header.version))
+        out_stream.write(struct.pack('<I', 0))  # 先占4bytes空间, 最后再seek到这里写入数据
+        out_stream.write(original_bytes[
+            3 + 1 + 4:s.tags[0].file_offset  # copy 'FWS' + version + length 到 第一个tag之间的内容
+        ])
+        for tag in s.tags:
+            # logger.debug('0x{0:04x}({1:5d}) Tag:{2}'.format(  # log tag的位置
+            #     tag.file_offset, tag.header.tag_length, tag.name
+            # ))
+            # tag替换内容提炼为Replacer系列类的功能
+            # tag转换为bytes提炼为Converter系列类的功能
+            if tag.type == TagDoABC.TYPE:
+                new_tag = TagDoABCReplacer(self.packages, self.names_map).replace(tag)
+                if new_tag is not tag:
+                    logger.debug('[TagDoABC] {0}'.format(tag.abcName))
                 else:
-                    # 其他tag保持原有bytes
-                    outfile.write(original_bytes[
-                        tag.file_offset:(tag.file_offset + tag.header.tag_length)
-                    ])
-                    continue
-            file_length = outfile.tell()
-            outfile.seek(3 + 1)
-            outfile.write(struct.pack('<I', file_length))
+                    # logger.debug('not modified TagDoABC: {0}'.format(tag.abcName))
+                    pass
+                out_stream.write(TagDoABCConverter.to_bytes(new_tag))
+            elif tag.type == TagSymbolClass.TYPE:
+                logger.debug('[TagSymbolClass]')
+                new_tag = TagSymbolReplacer(self.packages, self.names_map).replace(tag)
+                out_stream.write(TagSymbolConverter.to_bytes(new_tag))
+            elif tag.type == TagDefineBinaryData.TYPE:
+                logger.debug('[TagDefineBinaryData] {0} {1}'.format(
+                    tag.characterId, self.symbols[tag.characterId]
+                ))
+                if self.symbols[tag.characterId] not in self.names_map['class']:
+                    new_tag = tag
+                else:
+                    new_tag = TagDefineBinaryDataReplacer(self.names_map, self.symbols).replace(tag)
+                out_stream.write(TagDefineBinaryDataConverter.to_bytes(new_tag))
+            else:
+                # 其他tag保持原有bytes
+                logger.debug('[Copy from {0} to {1}]'.format(
+                    tag.file_offset,
+                    (tag.file_offset + tag.header.tag_length)
+                ))
+                out_stream.write(original_bytes[
+                    tag.file_offset:(tag.file_offset + tag.header.tag_length)
+                ])
+                continue
+        file_length = out_stream.tell()
+        out_stream.seek(3 + 1)
+        out_stream.write(struct.pack('<I', file_length))
+        # 把字节流压缩并写入文件
+        with open(out_filename, 'wb') as outfile:
+            outfile.write(compress(out_stream.getvalue()))
 
 
 class TagSymbolReplacer(object):

@@ -127,8 +127,7 @@ obfuscator = AS3Obfuscator(
     keep_classname_classes=['TeachConfig.as', ],
     keep_static_constant_name=['TeachConfig::s_subject', ]
 )
-obfuscator.run(r'D:\Projects\Lab\czxkpt\trunk\Bio\out\production\Bio\Teach.decompressed.swf')
-# obfuscator.debug('./samples/Bio/out/production/Bio/Teach.decompressed.swf')
+obfuscator.run(r'D:\Projects\Lab\czxkpt\trunk\Bio\out\production\Bio\Teach.swf')
 
 
 # from AS3Obfuscator import AS3Obfuscator
