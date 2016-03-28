@@ -9,13 +9,12 @@ import pprint
 from collections import defaultdict
 
 from six import BytesIO
-import lxml
 from lxml import etree
 
 from thirdparty.swf.movie import SWF
 from thirdparty.swf.stream import SWFStream
 from thirdparty.swf.tag import (TagDoABC, TagSymbolClass, TagDefineBinaryData)
-from thirdparty.swf.abcfile import ABCFile, StMethodInfo, StMultiname, CONSTANT_KIND_NAME
+from thirdparty.swf.abcfile import ABCFile, StMethodInfo, StMultiname
 from thirdparty.swf.abcfile.trait import (
     StTraitMethod,
     StTraitSlot
@@ -29,7 +28,7 @@ from thirdparty.swf.abcfile.instruction import (
     InstructionGetproperty,
 )
 from utils import (
-    filepath2module, module2filepath,
+    filepath2module,
     splitABCName, joinPackageClassName,
     decompress, compress
 )
@@ -41,6 +40,7 @@ from converter import (
 )
 from logger import logger
 
+# noinspection PyShadowingBuiltins
 range = xrange
 
 
@@ -70,7 +70,8 @@ class SWFFileReplacer(object):
                 for symbol in tag.symbols:
                     self.symbols[symbol.tagId] = symbol.name
 
-    def replace(self, swf_filename, out_filename):
+    def replace(self, swf_filename, out_filename,
+                is_clear_debug_messages, is_replace_public_constant):
         # 解压文件读出原字节串
         with open(swf_filename, 'rb') as infile:
             original_bytes = decompress(infile.read())
@@ -91,7 +92,13 @@ class SWFFileReplacer(object):
             # tag替换内容提炼为Replacer系列类的功能
             # tag转换为bytes提炼为Converter系列类的功能
             if tag.type == TagDoABC.TYPE:
-                new_tag = TagDoABCReplacer(self.packages, self.names_map).replace(tag)
+                new_tag = TagDoABCReplacer(
+                    self.packages, self.names_map
+                ).replace(
+                    tag,
+                    is_clear_debug_messages=is_clear_debug_messages,
+                    is_replace_public_constant=is_replace_public_constant
+                )
                 if new_tag is not tag:
                     logger.debug('[TagDoABC] {0}'.format(tag.abcName))
                 else:
@@ -170,7 +177,8 @@ class TagDoABCReplacer(object):
         self.packages = packages
         self.names_map = names_map
 
-    def replace(self, original_tag):
+    def replace(self, original_tag,
+                is_clear_debug_messages, is_replace_public_constant):
         # 官方库返回原来的tag
         if (original_tag.abcName.startswith('flashx/')
                 or original_tag.abcName.startswith('mx/')
@@ -198,8 +206,8 @@ class TagDoABCReplacer(object):
         replacer = ABCFileReplacer(
             abcfile, abcclass, packagename, classname,
             self.names_map, self.packages,
-            is_replace_public_constant=True,
-            is_clear_debug_messages=False
+            is_clear_debug_messages=is_clear_debug_messages,
+            is_replace_public_constant=is_replace_public_constant
         )
         new_abcfile = replacer.replace()
         # 把替换后的abcfile转换为bytes
@@ -216,9 +224,10 @@ class TagDoABCReplacer(object):
 
 class ABCFileReplacer(object):
 
-    def __init__(self, abcfile, abcclass, packagename, classname, names_map, packages,
-                 is_replace_public_constant=False,
-                 is_clear_debug_messages=False):
+    def __init__(self, abcfile, abcclass, packagename, classname,
+                 names_map, packages,
+                 is_replace_public_constant,
+                 is_clear_debug_messages):
         self.abcfile = abcfile
         self.abcclass = abcclass
         self.new_abcfile = copy.deepcopy(abcfile)
@@ -298,11 +307,11 @@ class ABCFileReplacer(object):
                 if info['name'] in self.abcclass.methods:
                     new_method_name = self.abcclass.fuzzy.methods[info['name']].name
                     self._set_new_string(multiname.name, new_method_name)
-                    logger.debug(u'Replace by {0}({1})'.format(new_method_name, multiname.name))
+                    logger.debug('Replace by {0}({1})'.format(new_method_name, multiname.name))
                 elif info['name'] in self.abcclass.variables:
                     new_var_name = self.abcclass.fuzzy.variables[info['name']].name
                     self._set_new_string(multiname.name, new_var_name)
-                    logger.debug(u'Replace by {0}({1})'.format(new_var_name, multiname.name))
+                    logger.debug('Replace by {0}({1})'.format(new_var_name, multiname.name))
             elif info['namespace'] == '':
                 # 根package中其他文件中定义的类
                 if info['name'] in self.packages[''].classes:
@@ -324,7 +333,7 @@ class ABCFileReplacer(object):
                 # 替换为混淆后的包名
                 new_namespace = self.names_map['module'][info['namespace']]
                 self._set_new_namespace(multiname.ns, new_namespace)
-                logger.debug(u'Replace by {0}({1}) {2}({3})'.format(
+                logger.debug('Replace by {0}({1}) {2}({3})'.format(
                     new_classname, multiname.name,
                     new_namespace, self.abcfile.const_pool.namespaces[multiname.ns]
                 ))
@@ -454,7 +463,7 @@ class ABCFileReplacer(object):
         # 丢弃字节中的debug信息, 从而消除局部变量名
         for method_body in self.new_abcfile.method_bodies:
             method_name_index = self.new_abcfile.methods[method_body.method].name
-            logger.debug(u'Method name: {}'.format(
+            logger.debug('Method name: {}'.format(
                 self._get_original_string(method_name_index)
             ))
             replacer = InstructionReplacer(
@@ -612,71 +621,6 @@ class TagDefineBinaryDataReplacer(object):
                         new_shape_node.set(key, new_val)
                     else:
                         new_shape_node.set(key, val)
-        return etree.tostring(
-            new_panels_node,
-            # pretty_print=True,
-            encoding='utf-8', xml_declaration=True
-        )
-
-    def _replace_xml_data_bio(self, panels_node):
-        assert panels_node.tag == 'Panels'
-        new_panels_node = etree.Element(panels_node.tag)
-        for panel_node in panels_node:
-            if isinstance(panel_node, lxml.etree._Comment):
-                continue
-            assert panel_node.tag == 'Panel'
-            print('{} BeginId {}'.format(
-                panel_node.tag,
-                panel_node.attrib['BeginId'],
-            ))
-            # copy panel 结点的内容
-            new_panel_node = etree.SubElement(new_panels_node, panel_node.tag)
-            new_panel_node.set('BeginId', panel_node.attrib['BeginId'])
-            for shape_node in panel_node:
-                if isinstance(shape_node, lxml.etree._Comment):
-                    continue
-                assert shape_node.tag == 'Shape'
-                print(u'{} ShapeClass {} PropClass {}'.format(
-                    shape_node.tag,
-                    shape_node.attrib['ShapeClass'],
-                    shape_node.attrib['PropClass']
-                ))
-                # copy shape 结点的内容
-                new_shape_node = etree.SubElement(
-                    new_panel_node, shape_node.tag
-                )
-                new_shape_node.set('Id', shape_node.attrib['Id'])
-                new_shape_node.set('Caption', shape_node.attrib['Caption'])
-                shape_class = shape_node.attrib['ShapeClass']
-                if shape_class in self.names_map['class']:
-                    new_shape_node.set(
-                        'ShapeClass',
-                        self.names_map['class'][shape_class]
-                    )
-                    print('Replace ShapeClass {0} by {1}'.format(
-                        shape_class,
-                        self.names_map['class'][shape_class]
-                    ))
-                else:
-                    new_shape_node.set(
-                        'ShapeClass',
-                        shape_node.attrib['ShapeClass']
-                    )
-                prop_class = shape_node.attrib['PropClass']
-                if prop_class in self.names_map['class']:
-                    new_shape_node.set(
-                        'PropClass',
-                        self.names_map['class'][prop_class]
-                    )
-                    print('Replace PropClass {0} by {1}'.format(
-                        prop_class,
-                        self.names_map['class'][prop_class]
-                    ))
-                else:
-                    new_shape_node.set(
-                        'PropClass',
-                        shape_node.attrib['PropClass']
-                    )
         return etree.tostring(
             new_panels_node,
             # pretty_print=True,

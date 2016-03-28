@@ -39,6 +39,10 @@ class AS3Obfuscator(object):
                  keep_static_constant_name=None):
         # 是否保存混淆之后的 .as 文件.
         self.is_move_source_codes = False
+        # 是否清除debug信息
+        self.is_clear_debug_messages = True
+        # 是否替换公有常量名
+        self.is_replace_public_constant = True
         self._paths = {
             'src': src_dir,
             'dst': dst_dir
@@ -75,7 +79,7 @@ class AS3Obfuscator(object):
         # 解析出来的 ActionScript3类 信息
         self._packages = {}
 
-    def _reproduce_module(self, src_root, dst_root, is_move_files=False):
+    def _reproduce_module(self, src_root, dst_root, is_move_files):
         """
         递归地处理目录
         """
@@ -103,7 +107,7 @@ class AS3Obfuscator(object):
                     if is_move_files:
                         os.makedirs(new_path)
                     # 递归处理子目录
-                    self._reproduce_module(old_path, new_path)
+                    self._reproduce_module(old_path, new_path, is_move_files)
 
     def _reproduce_file(self, src_root, dst_root, filename, is_move_files):
         """
@@ -197,7 +201,7 @@ class AS3Obfuscator(object):
                 shutil.rmtree(self._paths['dst'])
             os.makedirs(self._paths['dst'])
         # 收集混淆包名, 类名
-        self._reproduce_module(self._paths['src'], self._paths['dst'])
+        self._reproduce_module(self._paths['src'], self._paths['dst'], self.is_move_source_codes)
         self._names_map['module'] = self._module_generator.names_map
         self._names_map['module'][''] = ''
         self._names_map['class'] = self._classname_generator.names_map
@@ -263,10 +267,13 @@ class AS3Obfuscator(object):
             logger.info('Dumped `self` to `{0}`....'.format(dump_filename))
 
         logger.info('Analysing swf file:{0} ...'.format(swf_filename))
-        replacer = SWFFileReplacer(self._packages, self._names_map)
         name, ext = os.path.splitext(swf_filename)
         out_filename = name + '.obfused' + ext
-        replacer.replace(swf_filename, out_filename)
+        SWFFileReplacer(self._packages, self._names_map).replace(
+            swf_filename, out_filename,
+            is_clear_debug_messages=self.is_clear_debug_messages,
+            is_replace_public_constant=self.is_replace_public_constant
+        )
         logger.info('[FINISHED] Replaced SWF file {0} -> {1}'.format(swf_filename, out_filename))
         return None
 
