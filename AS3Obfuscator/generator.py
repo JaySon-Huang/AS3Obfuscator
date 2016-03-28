@@ -105,40 +105,48 @@ class FuzzyClassnameGenerator(object):
             old_class_meta['full_name'] = filepath2module(old_class_meta['full_path'])
         return old_class_meta
 
-    def generate(self, src_path, old_filename, dst_path):
+    def generate(self, src_path, old_filename, dst_path, is_keep_class_name=False):
         # 收集旧类文件信息
         old_class_meta = self.collect_old_meta(src_path, old_filename)
         # 生成新类名信息
         new_class_meta = {}
-        relative_path = os.path.relpath(dst_path, self.root_paths['dst'])
-        while True:
-            new_class_meta['name'] = (
-                random.choice(FuzzyClassnameGenerator.NAME_FIRST_CH_SET)
-                + ''.join(
-                    random.choice(FuzzyClassnameGenerator.NAME_SET)
-                    for _ in range(FuzzyClassnameGenerator.FUZZY_LENGTH - 1))
-            )
-            if relative_path == '.':
-                new_class_meta['full_path'] = new_class_meta['name']
-                new_class_meta['full_name'] = new_class_meta['name']
-            else:
-                new_class_meta['full_path'] = os.path.join(
-                    relative_path, new_class_meta['name']
+        if is_keep_class_name:
+            new_class_meta['name'] = old_class_meta['name']
+            new_class_meta = self._set_meta_full_name(new_class_meta, dst_path)
+        else:
+            while True:
+                new_class_meta['name'] = (
+                    random.choice(FuzzyClassnameGenerator.NAME_FIRST_CH_SET)
+                    + ''.join(
+                        random.choice(FuzzyClassnameGenerator.NAME_SET)
+                        for _ in range(FuzzyClassnameGenerator.FUZZY_LENGTH - 1))
                 )
-                new_class_meta['full_name'] = filepath2module(new_class_meta['full_path'])
-            if new_class_meta['full_path'] not in self._names_map_r:
-                break
+                new_class_meta = self._set_meta_full_name(new_class_meta, dst_path)
+                if new_class_meta['full_path'] not in self._names_map_r:
+                    break
         # 标记此classname已经被使用
         self.set_name_map(old_class_meta['full_path'], new_class_meta['full_path'])
         return new_class_meta, old_class_meta
 
     def set_name_map(self, old_full_path, new_full_path):
-        assert old_full_path not in self._names_map
+        assert old_full_path not in self._names_map, '{0} already existed in names_map!'.format(old_full_path)
         self._names_map[old_full_path] = new_full_path
         self._names_map_r[new_full_path] = old_full_path
         logger.debug('[Class] {0} -> {1}'.format(
             filepath2module(old_full_path), filepath2module(new_full_path)
         ))
+
+    def _set_meta_full_name(self, meta, dst_path):
+        relative_path = os.path.relpath(dst_path, self.root_paths['dst'])
+        if relative_path == '.':
+            meta['full_path'] = meta['name']
+            meta['full_name'] = meta['name']
+        else:
+            meta['full_path'] = os.path.join(
+                relative_path, meta['name']
+            )
+            meta['full_name'] = filepath2module(meta['full_path'])
+        return meta
 
 
 class FuzzyClassGenerator(object):

@@ -135,10 +135,10 @@ class AS3Obfuscator(object):
                     os.path.split(old_cls_meta['full_path'])[0]
                 )
             )
-            # mxml 文件类名保持不变
-            self._classname_generator.set_name_map(
-                old_cls_meta['full_path'],
-                old_cls_meta['full_path']
+            # mxml 文件类名保持不变, 包名进行修改
+            new_cls_meta, _ = self._classname_generator.generate(
+                src_root, filename, dst_root,
+                is_keep_class_name=True
             )
             if src_root != self._paths['src']:
                 # 框架生成的 WatcherSetupUtil 类, 把其加入swf文件中处理二进制中的包名/类名

@@ -100,9 +100,8 @@ class SWFFileReplacer(object):
                     new_tag = TagSymbolReplacer(self.packages, self.names_map).replace(tag)
                     outfile.write(TagSymbolConverter.to_bytes(new_tag))
                 elif tag.type == TagDefineBinaryData.TYPE:
-                    logger.debug('{0} {1} {2}'.format(
-                        tag.name, tag.characterId,
-                        self.symbols[tag.characterId]
+                    logger.debug('[TagDefineBinaryData] {0} {1}'.format(
+                        tag.characterId, self.symbols[tag.characterId]
                     ))
                     if self.symbols[tag.characterId] not in self.names_map['class']:
                         new_tag = tag
@@ -551,18 +550,38 @@ class TagDefineBinaryDataReplacer(object):
         new_tag.reserved = original_tag.reserved
 
         tree = etree.parse(BytesIO(original_tag.data))
-        panels_node = tree.getroot()
-        if panels_node.tag == 'Panels' and 'TYPE' in panels_node.attrib:
-            type_ = panels_node.attrib['TYPE']
-            if type_ == 'Bio':
-                new_tag.data = self._replace_xml_data_bio(panels_node)
-            elif type_ == 'Chem':
-                new_tag.data = self._replace_xml_data_chem(panels_node)
+        root_node = tree.getroot()
+        if root_node.tag == 'menus':
+            new_tag.data = self._replace_xml_data(root_node)
         else:
             new_tag.data = original_tag.data
         # 2 for charaterID, 4 for reserved, other for data
         new_tag.header.content_length = 2 + 4 + len(new_tag.data)
         return new_tag
+
+    def _replace_xml_data(self, root_node):
+        assert root_node.tag == 'menus'
+        class_names_map = self.names_map['class']
+        new_root_node = etree.Element(root_node.tag)
+        for item_node in root_node.xpath('item'):
+            new_item_node = etree.SubElement(
+                new_root_node, item_node.tag, item_node.attrib
+            )
+            for item2_node in item_node.xpath('item2'):
+                new_item2_node = etree.SubElement(
+                    new_item_node, item2_node.tag, item2_node.attrib
+                )
+                for key, val in item2_node.attrib.items():
+                    if (key in ('item2Class', 'PropClass')
+                            and val != '' and val in class_names_map):
+                        new_val = class_names_map[val]
+                        new_item2_node.set(key, new_val)
+                        logger.debug('{0}: {1} -> {2}'.format(key, val, new_val))
+        return etree.tostring(
+            new_root_node,
+            # pretty_print=True,
+            encoding='utf-8', xml_declaration=True
+        )
 
     def _replace_xml_data_chem(self, panels_node):
         assert panels_node.tag == 'Panels'
