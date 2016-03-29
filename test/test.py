@@ -118,16 +118,16 @@ builder = thirdparty.asdox.asBuilder.Builder()
 
 import sys
 sys.path.append('../thirdparty')
-from AS3Obfuscator import AS3Obfuscator
-obfuscator = AS3Obfuscator(
-    r'D:\Projects\Lab\czxkpt\trunk\Bio\src',
-    r'D:\Projects\Lab\czxkpt\trunk\Bio\obfused',
-    ignore_paths=['res', ],
-    ignore_classes=[],
-    keep_classname_classes=['TeachConfig.as', ],
-    keep_static_constant_name=['TeachConfig::s_subject', ]
-)
-obfuscator.run(r'D:\Projects\Lab\czxkpt\trunk\Bio\out\production\Bio\Teach.swf')
+# from AS3Obfuscator import AS3Obfuscator
+# obfuscator = AS3Obfuscator(
+#     r'D:\Projects\Lab\czxkpt\trunk\Bio\src',
+#     r'D:\Projects\Lab\czxkpt\trunk\Bio\obfused',
+#     ignore_paths=['res', ],
+#     ignore_classes=[],
+#     keep_classname_classes=['TeachConfig.as', ],
+#     keep_static_constant_name=['TeachConfig::s_subject', ]
+# )
+# obfuscator.run(r'D:\Projects\Lab\czxkpt\trunk\Bio\out\production\Bio\Teach.swf')
 
 
 # from AS3Obfuscator import AS3Obfuscator
@@ -141,16 +141,16 @@ obfuscator.run(r'D:\Projects\Lab\czxkpt\trunk\Bio\out\production\Bio\Teach.swf')
 # )
 # obfuscator.run(r'D:\Projects\Lab\czxkpt\trunk\Chem\out\production\Chem\Teach.swf')
 
-# from AS3Obfuscator import AS3Obfuscator
-# obfuscator = AS3Obfuscator(
-#     r'D:\Projects\Lab\czxkpt\trunk\Math\src',
-#     r'D:\Projects\Lab\czxkpt\trunk\Math\obfused',
-#     ignore_paths=['res', ],
-#     ignore_classes=[],
-#     keep_classname_classes=['TeachConfig.as', ],
-#     keep_static_constant_name=['TeachConfig::s_subject', ]
-# )
-# obfuscator.run(r'D:\Projects\Lab\czxkpt\trunk\Math\out\production\Math\Teach.swf')
+from AS3Obfuscator import AS3Obfuscator
+obfuscator = AS3Obfuscator(
+    r'D:\Projects\Lab\czxkpt\trunk\Math\src',
+    r'D:\Projects\Lab\czxkpt\trunk\Math\obfused',
+    ignore_paths=['res', ],
+    ignore_classes=[],
+    keep_classname_classes=['TeachConfig.as', ],
+    keep_static_constant_name=['TeachConfig::s_subject', ]
+)
+obfuscator.run(r'D:\Projects\Lab\czxkpt\trunk\Math\out\production\Math\Teach.swf')
 
 # builder.addMXMLSource('./samples/MesWnd.mxml', '')
 

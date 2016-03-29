@@ -2,10 +2,11 @@
 # encoding=utf-8
 import logging
 
+LOG_FILENAME = 'run.log'
 logging.basicConfig(
     level=logging.DEBUG,
     format='[%(levelname)5s] %(filename)s@line:%(lineno)3s %(message)s',
-    filename='run.log',
+    filename=LOG_FILENAME,
     filemode='w'
 )
 LOGGER_NAME = 'AS3Obfuscator'

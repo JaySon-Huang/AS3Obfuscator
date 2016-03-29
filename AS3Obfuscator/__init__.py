@@ -16,7 +16,7 @@ from generator import (
     FuzzyModulenameGenerator,
     FuzzyClassnameGenerator,
 )
-from logger import logger
+from logger import logger, LOG_FILENAME
 
 
 def get_dummy_watcher_class(class_full_name):
@@ -255,30 +255,37 @@ class AS3Obfuscator(object):
                 self._names_map['method'][interface.full_name] = method_names_map
                 self._names_map['var'][interface.full_name] = var_names_map
 
+        # 区分前缀
+        PREFIX = swf_filename.split(os.sep)[-2]
+
         # 记录映射关系
-        names_map_filename = 'names_map.json'
+        names_map_filename = 'names_map.{0}.json'.format(PREFIX)
         logger.info('Dumped NamesMap -> {0}'.format(names_map_filename))
         logger.debug('NamesMap: {0}'.format(json.dumps(self._names_map, indent=4)))
         with open(names_map_filename, 'w') as outfile:
             outfile.write(json.dumps(self._names_map, indent=4))
 
-        pydata_filename = swf_filename.split(os.sep)[2]
-        dump_filename = 'self.' + pydata_filename + '.pydata'
+        dump_filename = 'self.{0}.pydata'.format(PREFIX)
         import cPickle as pickle
         with open(dump_filename, 'w') as outfile:
             pickle.dump(self, outfile)
-            logger.info('Dumped `self` to `{0}`....'.format(dump_filename))
+            logger.info('Dumped `self` -> {0}....'.format(dump_filename))
 
-        logger.info('Analysing swf file:{0} ...'.format(swf_filename))
+        logger.info('Analysing swf file: {0} ...'.format(swf_filename))
         name, ext = os.path.splitext(swf_filename)
-        out_filename = name + '.obfused' + ext
+        out_filename = '{0}.obfused{1}'.format(name, ext)
         SWFFileReplacer(self._packages, self._names_map).replace(
             swf_filename, out_filename,
             is_clear_debug_messages=self.is_clear_debug_messages,
             is_replace_public_constant=self.is_replace_public_constant
         )
         logger.info('[FINISHED] Replaced SWF file {0} -> {1}'.format(swf_filename, out_filename))
-        return None
+
+        NEW_LOG_FILENAME = 'run.{0}.log'.format(PREFIX)
+        shutil.copy(LOG_FILENAME, NEW_LOG_FILENAME)
+        logger.info('[LOG FILE] -> {0}'.format(NEW_LOG_FILENAME))
+
+        print('[FINISHED!]')
 
     def debug(self, swf_filename):
         pydata_filename = swf_filename.split(os.sep)[2]
