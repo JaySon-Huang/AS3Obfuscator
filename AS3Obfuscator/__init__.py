@@ -36,13 +36,16 @@ class AS3Obfuscator(object):
     def __init__(self, src_dir, dst_dir,
                  ignore_paths=None, ignore_classes=None,
                  keep_classname_classes=None,
-                 keep_static_constant_name=None):
+                 keep_static_constant_name=None,
+                 is_move_source_codes=False,
+                 is_clear_debug_messages=True,
+                 is_replace_public_constant=True):
         # 是否保存混淆之后的 .as 文件.
-        self.is_move_source_codes = False
+        self.is_move_source_codes = is_move_source_codes
         # 是否清除debug信息
-        self.is_clear_debug_messages = True
+        self.is_clear_debug_messages = is_clear_debug_messages
         # 是否替换公有常量名
-        self.is_replace_public_constant = True
+        self.is_replace_public_constant = is_replace_public_constant
         self._paths = {
             'src': src_dir,
             'dst': dst_dir

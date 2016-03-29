@@ -132,29 +132,27 @@ obfuscator.run(r'D:\Projects\Lab\czxkpt\trunk\Bio\out\production\Bio\Teach.swf')
 
 # from AS3Obfuscator import AS3Obfuscator
 # obfuscator = AS3Obfuscator(
-#     './samples/Chem/src',
-#     './samples/Chem/obfuscated',
+#     r'D:\Projects\Lab\czxkpt\trunk\Chem\src',
+#     r'D:\Projects\Lab\czxkpt\trunk\Chem\obfused',
 #     ignore_paths=['res', ],
 #     ignore_classes=[],
 #     keep_classname_classes=['TeachConfig.as', ],
 #     keep_static_constant_name=['TeachConfig::s_subject', ]
 # )
-# obfuscator.run('./samples/Chem/out/production/Chem/Teach.decompressed.swf')
-# # obfuscator.debug('./samples/Chem/out/production/Chem/Teach.decompressed.swf')
-
-
-# builder.addMXMLSource('./samples/MesWnd.mxml', '')
+# obfuscator.run(r'D:\Projects\Lab\czxkpt\trunk\Chem\out\production\Chem\Teach.swf')
 
 # from AS3Obfuscator import AS3Obfuscator
 # obfuscator = AS3Obfuscator(
-#     './samples/Math/src',
-#     './samples/Math/obfuscated',
+#     r'D:\Projects\Lab\czxkpt\trunk\Math\src',
+#     r'D:\Projects\Lab\czxkpt\trunk\Math\obfused',
 #     ignore_paths=['res', ],
 #     ignore_classes=[],
 #     keep_classname_classes=['TeachConfig.as', ],
 #     keep_static_constant_name=['TeachConfig::s_subject', ]
 # )
-# obfuscator.run('./samples/Math/out/production/Math/Teach.decompressed.swf')
-# # obfuscator.debug('./samples/Math/out/production/Math/Teach.decompressed.swf')
+# obfuscator.run(r'D:\Projects\Lab\czxkpt\trunk\Math\out\production\Math\Teach.swf')
+
+# builder.addMXMLSource('./samples/MesWnd.mxml', '')
+
 
 # from IPython import embed;embed();

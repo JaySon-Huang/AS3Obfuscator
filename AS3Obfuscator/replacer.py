@@ -571,7 +571,11 @@ class TagDefineBinaryDataReplacer(object):
         tree = etree.parse(BytesIO(original_tag.data))
         root_node = tree.getroot()
         if root_node.tag == 'menus':
-            new_tag.data = self._replace_xml_data(root_node)
+            if root_node.get('BELONG_CLASS') is not None:
+                # 化学的 ChemEquipmentsData XML数据中 InitMethodName 需要变为混淆后的名字
+                new_tag.data = self._replace_xml_data_chem(root_node)
+            else:
+                new_tag.data = self._replace_xml_data(root_node)
         else:
             new_tag.data = original_tag.data
         # 2 for charaterID, 4 for reserved, other for data
@@ -602,27 +606,35 @@ class TagDefineBinaryDataReplacer(object):
             encoding='utf-8', xml_declaration=True
         )
 
-    def _replace_xml_data_chem(self, panels_node):
-        assert panels_node.tag == 'Panels'
-        classname = panels_node.attrib['BELONG']
+    def _replace_xml_data_chem(self, root_node):
+        assert root_node.tag == 'menus'
+        class_names_map = self.names_map['class']
+        classname = root_node.attrib['BELONG_CLASS']
         method_names_map = self.names_map['method'][classname]
-        new_panels_node = etree.Element(panels_node.tag)
-        for panel_node in panels_node.xpath('Panel'):
+
+        new_root_node = etree.Element(root_node.tag)
+        for item_node in root_node.xpath('item'):
             new_panel_node = etree.SubElement(
-                new_panels_node,
-                panel_node.tag, panel_node.attrib
+                new_root_node, item_node.tag, item_node.attrib
             )
-            for shape_node in panel_node.xpath('Shape'):
-                new_shape_node = etree.SubElement(new_panel_node, shape_node.tag)
-                for key, val in shape_node.attrib.items():
-                    if key == 'InitMethodName' and val != '':
+            for item2_node in item_node.xpath('item2'):
+                new_item2_node = etree.SubElement(
+                    new_panel_node, item2_node.tag, item2_node.attrib
+                )
+                for key, val in item2_node.attrib.items():
+                    if (key in ('item2Class', 'PropClass')
+                            and val != '' and val in class_names_map):
+                        new_val = class_names_map[val]
+                        new_item2_node.set(key, new_val)
+                        logger.debug('{0}: {1} -> {2}'.format(key, val, new_val))
+                    elif key == 'InitMethodName' and val != '':
                         # 替换为混淆后的初始化函数名
                         new_val = method_names_map[val]
-                        new_shape_node.set(key, new_val)
-                    else:
-                        new_shape_node.set(key, val)
+                        new_item2_node.set(key, new_val)
+                        logger.debug('{0}: {1} -> {2}'.format(key, val, new_val))
+                        print('{0}: {1} -> {2}'.format(key, val, new_val))
         return etree.tostring(
-            new_panels_node,
+            new_root_node,
             # pretty_print=True,
             encoding='utf-8', xml_declaration=True
         )
