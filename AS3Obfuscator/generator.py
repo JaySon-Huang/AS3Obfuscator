@@ -13,7 +13,7 @@ random.seed('03620362')
 import string
 
 from utils import filepath2module, module2filepath
-from logger import logger
+from log import logger
 
 FUCKUP_PUNCTUATIONS = '{|}!#$%()*+;='
 

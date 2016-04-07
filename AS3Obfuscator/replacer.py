@@ -38,7 +38,7 @@ from converter import (
     TagSymbolConverter,
     TagDefineBinaryDataConverter,
 )
-from logger import logger
+from log import logger
 
 # noinspection PyShadowingBuiltins
 range = xrange

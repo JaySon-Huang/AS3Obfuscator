@@ -16,7 +16,7 @@ from generator import (
     FuzzyModulenameGenerator,
     FuzzyClassnameGenerator,
 )
-from logger import logger, LOG_FILENAME
+from log import logger, LOG_FILENAME
 
 
 def get_dummy_watcher_class(class_full_name):
@@ -225,11 +225,20 @@ class AS3Obfuscator(object):
                 # embed 嵌入的数据类
                 vars_with_metatag = filter(
                     lambda var: (var.type_ == 'Class'
-                                 and len(var.metadata) != 0
-                                 and var.metadata[0].name == 'Embed'),
+                                 and len(var.metadata) != 0),
                     cls.variables.values()
                 )
                 for var in vars_with_metatag:
+                    print(var, var.metadata)
+                    # 确保有Embed元标签
+                    has_embed_metatag = False
+                    for metadata in var.metadata:
+                        if metadata.name == 'Embed':
+                            has_embed_metatag = True
+                    if not has_embed_metatag:
+                        continue
+
+                    print('With Embed:', var, var.metadata)
                     from thirdparty.asdox.asModel import ASClass
                     embed_class = ASClass('{0}_{1}'.format(cls.name, var.name))
                     embed_class.full_name = '{0}_{1}'.format(cls.full_name, var.name)
