@@ -123,7 +123,8 @@ class Builder(object):
                 continue
             if subroot.tag.endswith('Script'):
                 try:
-                    tokens = asGrammar.MXML_SCRIPT_BLOCK.parseString(subroot.text)
+                    source = TidySourceFile.tidy(TidySourceFile.trim_comments(subroot.text))
+                    tokens = asGrammar.MXML_SCRIPT_BLOCK.parseString(source)
                     if tokens.variables:
                         for var in [_[0] for _ in tokens.variables.asList()]:
                             cls.variables[var.name] = var
