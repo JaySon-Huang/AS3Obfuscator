@@ -111,6 +111,7 @@ class AS3Obfuscator(object):
         对文件进行处理
         """
         old_cls_meta = self._classname_generator.collect_old_meta(src_root, filename)
+
         if old_cls_meta['full_name'] in self._ignore_classes:
             logger.debug('ignore class: {0}'.format(os.path.join(src_root, filename)))
             # 忽略的类, 直接复制到目标文件夹下
@@ -120,6 +121,7 @@ class AS3Obfuscator(object):
                     dst_root
                 )
             return
+
         if old_cls_meta['ext'].lower() not in ('.as', '.mxml'):
             # 非 .as .mxml, 直接复制文件到目标文件夹下
             if is_move_files:
@@ -216,6 +218,24 @@ class AS3Obfuscator(object):
                 )
                 self._names_map['method'][cls.full_name] = method_names_map
                 self._names_map['var'][cls.full_name] = var_names_map
+                # embed 嵌入的数据类
+                vars_with_metatag = filter(
+                    lambda var: (len(var.metadata) != 0
+                        and var.type_ == 'Class'
+                        and var.metadata[0].name == 'Embed'),
+                    cls.variables.values()
+                )
+                for var in vars_with_metatag:
+                    original_fullname = '{0}_{1}'.format(cls.full_name, var.name)
+                    fuzzy_fullname = '{0}.{1}_{2}'.format(
+                        '.'.join(cls.fuzzy.full_name.split('.')[:-1]),
+                        cls.name,
+                        cls.fuzzy.variables[var.name].name
+                    )
+                    # self._names_map['class'][original_fullname] = fuzzy_fullname
+                    print('{0} -> {1}'.format(
+                        original_fullname, fuzzy_fullname
+                    ))
             for interface in pkg.interfaces.values():
                 interface.fuzzy, method_names_map, var_names_map = class_generator.generate(
                     pkg.name, interface,
