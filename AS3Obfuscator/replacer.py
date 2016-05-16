@@ -586,20 +586,21 @@ class TagDefineBinaryDataReplacer(object):
         assert root_node.tag == 'menus'
         class_names_map = self.names_map['class']
         new_root_node = etree.Element(root_node.tag)
-        for item_node in root_node.xpath('item'):
+        for item_node in root_node.iterchildren('item'):  # 只复制item节点的内容
             new_item_node = etree.SubElement(
                 new_root_node, item_node.tag, item_node.attrib
             )
-            for item2_node in item_node.xpath('item2'):
-                new_item2_node = etree.SubElement(
-                    new_item_node, item2_node.tag, item2_node.attrib
-                )
+            for item2_node in item_node.iterchildren('item2'):  # 只复制item2节点的内容
+                new_item2_node = copy.copy(item2_node)  # 把item2节点进行拷贝
+                # 修改item2节点的内容
                 for key, val in item2_node.attrib.items():
                     if (key in ('item2Class', 'PropClass')
                             and val != '' and val in class_names_map):
                         new_val = class_names_map[val]
                         new_item2_node.set(key, new_val)
                         logger.debug('{0}: {1} -> {2}'.format(key, val, new_val))
+                # 把item2节点放在新的item结点下
+                new_item_node.append(new_item2_node)
         return etree.tostring(
             new_root_node,
             # pretty_print=True,
@@ -613,14 +614,12 @@ class TagDefineBinaryDataReplacer(object):
         method_names_map = self.names_map['method'][classname]
 
         new_root_node = etree.Element(root_node.tag)
-        for item_node in root_node.xpath('item'):
-            new_panel_node = etree.SubElement(
+        for item_node in root_node.iterchildren('item'):
+            new_item_node = etree.SubElement(
                 new_root_node, item_node.tag, item_node.attrib
             )
-            for item2_node in item_node.xpath('item2'):
-                new_item2_node = etree.SubElement(
-                    new_panel_node, item2_node.tag, item2_node.attrib
-                )
+            for item2_node in item_node.iterchildren('item2'):
+                new_item2_node = copy.copy(item2_node)
                 for key, val in item2_node.attrib.items():
                     if (key in ('item2Class', 'PropClass')
                             and val != '' and val in class_names_map):
@@ -633,6 +632,7 @@ class TagDefineBinaryDataReplacer(object):
                         new_item2_node.set(key, new_val)
                         logger.debug('{0}: {1} -> {2}'.format(key, val, new_val))
                         print('{0}: {1} -> {2}'.format(key, val, new_val))
+                new_item_node.append(new_item2_node)
         return etree.tostring(
             new_root_node,
             # pretty_print=True,
